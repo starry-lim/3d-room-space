@@ -989,13 +989,13 @@ function wallDecor(room: THREE.Group, refs: RoomRefs) {
 /* ------------------------------------------------------------------ */
 
 function cat(room: THREE.Group, refs: RoomRefs) {
-  /* pink cushion stays fixed on the floor so Miso can walk freely around the room */
-  const cushion = ball(0.44, M(PAL.blush, 0.95), 1.25, 0.075, -1.2, 28, 14);
+  /* pink cushion stays fixed on the floor beside the radio cabinet so Miso can walk freely around the room */
+  const cushion = ball(0.44, M(PAL.blush, 0.95), -2.42, 0.075, 3.05, 28, 14);
   cushion.scale.y = 0.2;
   room.add(cushion);
 
   const root = tag(new THREE.Group(), "cat");
-  root.position.set(1.25, 0.155, -1.2);
+  root.position.set(-2.42, 0.155, 3.05);
   root.add(hitProxy(0.46, 0.4, 0.58, 0, 0.2, 0));
 
   const visual = new THREE.Group();

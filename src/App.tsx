@@ -833,6 +833,11 @@ export default function App() {
               />
             </div>
           )}
+          {panel === "avatar" && activity !== "none" && !resting && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+              <AvatarPanel config={save.avatar} onChange={updateAvatarConfig} onClose={() => setPanel(null)} />
+            </div>
+          )}
           <div
             aria-hidden={panel !== "radio"}
             inert={panel !== "radio"}
@@ -859,9 +864,6 @@ export default function App() {
             <ControlsHint touch={touch} locked={locked} />
           </div>
           <div className="flex flex-col items-center gap-2">
-            {panel === "avatar" && activity !== "none" && !resting && (
-              <AvatarPanel config={save.avatar} onChange={updateAvatarConfig} onClose={() => setPanel(null)} />
-            )}
             {resting && <RestCard energy={save.energy} onWake={wake} />}
             {(activity === "desk" || activity === "pouf") && !resting && (
               <FocusCard

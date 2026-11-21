@@ -102,13 +102,14 @@ const HUBS: [number, number][] = [
   [3.15, 0.35],
   [3.15, -1.1],
   [2.6, 0.85],
+  [-1.55, 2.35],
 ];
 
 const SPOTS: Record<Exclude<SurfaceId, "floor">, SurfaceSpot> = {
   cushion: {
-    perch: new THREE.Vector3(1.25, 0.155, -1.2),
-    takeoff: new THREE.Vector3(0.95, 0, -0.72),
-    yaw: -0.55,
+    perch: new THREE.Vector3(-2.42, 0.155, 3.05),
+    takeoff: new THREE.Vector3(-1.82, 0, 2.75),
+    yaw: 1.2,
   },
   bed: {
     perch: new THREE.Vector3(-2.12, 0.65, -1.18),

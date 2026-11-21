@@ -1063,8 +1063,8 @@ function SwatchRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="w-[74px] shrink-0 text-[11.5px] font-extrabold text-ink-soft">{label}</span>
-      <div className="flex flex-wrap justify-end gap-1.5">
+      <span className="w-[66px] shrink-0 text-[11px] font-extrabold text-ink-soft">{label}</span>
+      <div className="flex flex-wrap justify-end gap-1">
         {swatches.map((hex) => {
           const active = value.toLowerCase() === hex.toLowerCase();
           return (
@@ -1097,88 +1097,90 @@ export function AvatarPanel({
   onClose: () => void;
 }) {
   return (
-    <section
+    <aside
       role="dialog"
       aria-label="Third-person character model"
-      className="paper anim-rise scroll-soft pointer-events-auto max-h-[calc(100dvh-230px)] w-[min(430px,calc(100vw-24px))] overflow-y-auto rounded-[24px] p-4"
+      className="paper anim-slide pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] sm:w-[324px]"
     >
-      <div className="flex items-center justify-between gap-2">
+      <header className="flex items-start justify-between gap-2 px-4 pt-4">
         <div>
-          <h2 className="font-display text-[20px] font-semibold italic leading-none">Your 3rd-person model</h2>
-          <p className="mt-1 text-[11.5px] font-semibold text-ink-soft">Choose a character and customize its colors</p>
+          <h2 className="font-display text-[22px] font-semibold italic leading-none">Your 3rd-person model</h2>
+          <p className="mt-1.5 text-[11.5px] font-semibold text-ink-soft">Drag room to rotate · Scroll to zoom</p>
         </div>
         <button
           type="button"
           aria-label="Close model picker"
           onClick={onClose}
-          className="-mr-1 -mt-1 grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-paper-deep"
+          className="-mr-1 -mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
         >
           <Icon name="x" size={18} />
         </button>
-      </div>
+      </header>
 
-      <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-        {AVATAR_PRESETS.map((p) => {
-          const active = config.preset === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange({ preset: p.id, ...p.defaults })}
-              className={cn(
-                "press flex flex-col items-start gap-1 rounded-xl border-[1.5px] border-ink p-2 text-left transition-colors",
-                active ? "bg-mustard" : "bg-white/60 hover:bg-paper-deep",
-              )}
-            >
-              <span className="flex -space-x-1" aria-hidden>
-                <span className="h-3.5 w-3.5 rounded-full border border-ink" style={{ backgroundColor: p.defaults.topColor }} />
-                <span className="h-3.5 w-3.5 rounded-full border border-ink" style={{ backgroundColor: p.defaults.hairColor }} />
-              </span>
-              <span className="text-[12px] font-extrabold leading-tight">{p.name}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-3 space-y-2 border-t-[1.5px] border-dashed border-ink/25 pt-3">
-        <SwatchRow label="Hair / Fur" swatches={HAIR_SWATCHES} value={config.hairColor} onPick={(hairColor) => onChange({ ...config, hairColor })} />
-        <SwatchRow label="Top" swatches={TOP_SWATCHES} value={config.topColor} onPick={(topColor) => onChange({ ...config, topColor })} />
-        <SwatchRow label="Bottoms" swatches={BOTTOM_SWATCHES} value={config.bottomColor} onPick={(bottomColor) => onChange({ ...config, bottomColor })} />
-
-        <div className="flex items-center justify-between gap-2 pt-0.5">
-          <span className="w-[74px] shrink-0 text-[11.5px] font-extrabold text-ink-soft">Accessory</span>
-          <div className="flex flex-wrap justify-end gap-1">
-            {ACCESSORY_OPTIONS.map((a) => {
-              const active = config.accessory === a.id;
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onChange({ ...config, accessory: a.id })}
-                  className={cn(
-                    "rounded-full border-[1.5px] border-ink px-2.5 py-0.5 text-[11px] font-extrabold transition-colors",
-                    active ? "bg-ink text-paper" : "bg-white/65 hover:bg-mustard",
-                  )}
-                >
-                  {a.label}
-                </button>
-              );
-            })}
-          </div>
+      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
+        <div className="grid grid-cols-2 gap-1.5">
+          {AVATAR_PRESETS.map((p) => {
+            const active = config.preset === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onChange({ preset: p.id, ...p.defaults })}
+                className={cn(
+                  "press flex items-center gap-2 rounded-xl border-[1.5px] border-ink px-2.5 py-2 text-left transition-colors",
+                  active ? "bg-mustard" : "bg-white/60 hover:bg-paper-deep",
+                )}
+              >
+                <span className="flex shrink-0 -space-x-1" aria-hidden>
+                  <span className="h-3.5 w-3.5 rounded-full border border-ink" style={{ backgroundColor: p.defaults.topColor }} />
+                  <span className="h-3.5 w-3.5 rounded-full border border-ink" style={{ backgroundColor: p.defaults.hairColor }} />
+                </span>
+                <span className="truncate text-[12px] font-extrabold leading-tight">{p.name}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {config.accessory !== "none" && (
-          <SwatchRow
-            label="Acc. color"
-            swatches={ACC_SWATCHES}
-            value={config.accessoryColor}
-            onPick={(accessoryColor) => onChange({ ...config, accessoryColor })}
-          />
-        )}
+        <div className="mt-3 space-y-2 border-t-[1.5px] border-dashed border-ink/25 pt-3">
+          <SwatchRow label="Hair / Fur" swatches={HAIR_SWATCHES} value={config.hairColor} onPick={(hairColor) => onChange({ ...config, hairColor })} />
+          <SwatchRow label="Top" swatches={TOP_SWATCHES} value={config.topColor} onPick={(topColor) => onChange({ ...config, topColor })} />
+          <SwatchRow label="Bottoms" swatches={BOTTOM_SWATCHES} value={config.bottomColor} onPick={(bottomColor) => onChange({ ...config, bottomColor })} />
+
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <span className="w-[66px] shrink-0 text-[11px] font-extrabold text-ink-soft">Accessory</span>
+            <div className="flex flex-wrap justify-end gap-1">
+              {ACCESSORY_OPTIONS.map((a) => {
+                const active = config.accessory === a.id;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => onChange({ ...config, accessory: a.id })}
+                    className={cn(
+                      "rounded-full border-[1.5px] border-ink px-2.5 py-0.5 text-[11px] font-extrabold transition-colors",
+                      active ? "bg-ink text-paper" : "bg-white/65 hover:bg-mustard",
+                    )}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {config.accessory !== "none" && (
+            <SwatchRow
+              label="Acc. color"
+              swatches={ACC_SWATCHES}
+              value={config.accessoryColor}
+              onPick={(accessoryColor) => onChange({ ...config, accessoryColor })}
+            />
+          )}
+        </div>
       </div>
-    </section>
+    </aside>
   );
 }
 
