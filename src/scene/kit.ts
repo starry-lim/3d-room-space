@@ -31,6 +31,14 @@ export const PAL = {
 /* ------------------------------------------------------------------ */
 
 const matCache = new Map<string, THREE.MeshStandardMaterial>();
+let proxyMat: THREE.MeshBasicMaterial | null = null;
+
+function getProxyMat(): THREE.MeshBasicMaterial {
+  if (!proxyMat) {
+    proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+  }
+  return proxyMat;
+}
 
 /** Cached standard material — most of the room shares a few dozen of these. */
 export function M(color: number, roughness = 0.86, metalness = 0): THREE.MeshStandardMaterial {
@@ -44,12 +52,21 @@ export function M(color: number, roughness = 0.86, metalness = 0): THREE.MeshSta
 }
 
 export function resetKit() {
+  for (const m of matCache.values()) m.dispose();
   matCache.clear();
+  if (proxyMat) {
+    proxyMat.dispose();
+    proxyMat = null;
+  }
 }
 
 /* ------------------------------------------------------------------ */
 /* Mesh helpers                                                        */
 /* ------------------------------------------------------------------ */
+
+export const UP = new THREE.Vector3(0, 1, 0);
+
+export const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 function finish<T extends THREE.Mesh>(mesh: T, x: number, y: number, z: number): T {
   mesh.position.set(x, y, z);
@@ -93,15 +110,23 @@ export function ball(r: number, mat: THREE.Material, x = 0, y = 0, z = 0, ws = 2
   return finish(new THREE.Mesh(new THREE.SphereGeometry(r, ws, hs), mat), x, y, z);
 }
 
+/** Thin cylinder between two points — stems, pencils, antennas, lamp arms. */
+export function rod(a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material, seg = 8) {
+  const d = new THREE.Vector3().subVectors(b, a);
+  const m = cyl(r, r, d.length(), mat, 0, 0, 0, seg);
+  m.position.copy(a).addScaledVector(d, 0.5);
+  m.quaternion.setFromUnitVectors(UP, d.normalize());
+  return m;
+}
+
 /** Invisible, raycast-only volume that makes small props easy to tap on phones. */
 export function hitProxy(w: number, h: number, d: number, x = 0, y = 0, z = 0) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), proxyMat);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), getProxyMat());
   m.position.set(x, y, z);
   m.visible = false;
   m.userData.proxy = true;
   return m;
 }
-const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
 
 /** Deterministic PRNG so the room looks the same on every visit. */
 export function rng(seed: number) {

@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { AvatarAccessory, AvatarConfig, AvatarPresetId } from "../game/data";
-import { PAL, box, rbox, cyl, ball } from "./kit";
+import { PAL, box, rbox, cyl, ball, rod, v } from "./kit";
+
+export const AVATAR_ARM_L1 = 0.235;
+export const AVATAR_ARM_L2 = 0.255;
 
 export const HAIR_SWATCHES = [
   "#3a2a28",
@@ -173,17 +176,6 @@ export interface AvatarRig {
   dumbbellL: THREE.Object3D;
   dumbbellR: THREE.Object3D;
   dispose: () => void;
-}
-
-const UP = new THREE.Vector3(0, 1, 0);
-const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
-
-function rod(a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material, seg = 10) {
-  const d = new THREE.Vector3().subVectors(b, a);
-  const m = cyl(r, r, d.length(), mat, 0, 0, 0, seg);
-  m.position.copy(a).addScaledVector(d, 0.5);
-  m.quaternion.setFromUnitVectors(UP, d.normalize());
-  return m;
 }
 
 function makeMiniDumbbell(trackMat: <T extends THREE.Material>(m: T) => T) {
@@ -477,8 +469,8 @@ export function buildAvatar(cfg: AvatarConfig): AvatarRig {
   torso.add(head);
 
   /* ---------------- Articulated 2-Bone Arms ---------------- */
-  const L1 = 0.235;
-  const L2 = 0.255;
+  const L1 = AVATAR_ARM_L1;
+  const L2 = AVATAR_ARM_L2;
   const armSleeveMat = isBot ? bottomMat : topMat;
 
   const mkArm = (side: -1 | 1) => {

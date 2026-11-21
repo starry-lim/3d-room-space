@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { ROOM, type CatRig } from "./furniture";
+import type { CatRig } from "./furniture";
+import { CAT_BOUNDS, CAT_OBSTACLES, FURNITURE_POS, type Box2D } from "./layout";
+import { angleDelta, approach, approachAngle, clamp } from "./math";
 
 export type CatSfx = "meow" | "trill" | "purr" | "hop" | "call";
 
@@ -49,49 +51,13 @@ type CatState =
   | "scratch"
   | "chase_laser";
 
-interface Box2D {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-}
-
 interface SurfaceSpot {
   perch: THREE.Vector3;
   takeoff: THREE.Vector3;
   yaw: number;
 }
 
-const CAT_MIN_X = ROOM.minX + 0.38;
-const CAT_MAX_X = ROOM.maxX - 0.38;
-const CAT_MIN_Z = ROOM.minZ + 0.38;
-const CAT_MAX_Z = ROOM.maxZ - 0.38;
 const CAT_MARGIN = 0.2;
-
-const OBSTACLES: Box2D[] = [
-  // Desk
-  { minX: -1.2, maxX: 1.0, minZ: -2.95, maxZ: -2.05 },
-  // Desk chair
-  { minX: -0.52, maxX: 0.02, minZ: -1.82, maxZ: -1.28 },
-  // Bed
-  { minX: -2.95, maxX: -1.55, minZ: -2.95, maxZ: -0.3 },
-  // Bookshelf
-  { minX: 1.55, maxX: 2.85, minZ: -2.97, maxZ: -2.55 },
-  // Console table
-  { minX: -2.95, maxX: -2.49, minZ: 1.1, maxZ: 2.5 },
-  // Monstera plant
-  { minX: -2.78, maxX: -2.18, minZ: 0.2, maxZ: 0.8 },
-  // Pouf
-  { minX: 1.82, maxX: 2.68, minZ: 1.32, maxZ: 2.18 },
-  // Scratching post
-  { minX: 2.38, maxX: 2.92, minZ: -1.62, maxZ: -1.08 },
-  // Spin bike
-  { minX: 3.65, maxX: 4.65, minZ: -2.62, maxZ: -1.68 },
-  // Dumbbell rack
-  { minX: 4.45, maxX: 4.95, minZ: -0.72, maxZ: 0.02 },
-  // Cozy cardboard box
-  { minX: 3.16, maxX: 3.74, minZ: 2.08, maxZ: 2.62 },
-];
 
 const HUBS: [number, number][] = [
   [0.25, 0.15],
@@ -107,7 +73,7 @@ const HUBS: [number, number][] = [
 
 const SPOTS: Record<Exclude<SurfaceId, "floor">, SurfaceSpot> = {
   cushion: {
-    perch: new THREE.Vector3(-2.42, 0.155, 3.05),
+    perch: new THREE.Vector3(...FURNITURE_POS.catCushionPerch),
     takeoff: new THREE.Vector3(-1.82, 0, 2.75),
     yaw: 1.2,
   },
@@ -117,17 +83,17 @@ const SPOTS: Record<Exclude<SurfaceId, "floor">, SurfaceSpot> = {
     yaw: 1.0,
   },
   pouf: {
-    perch: new THREE.Vector3(2.25, 0.47, 1.75),
+    perch: new THREE.Vector3(FURNITURE_POS.pouf[0], 0.47, FURNITURE_POS.pouf[2]),
     takeoff: new THREE.Vector3(1.62, 0, 1.45),
     yaw: -2.2,
   },
   chair: {
-    perch: new THREE.Vector3(-0.25, 0.56, -1.55),
+    perch: new THREE.Vector3(FURNITURE_POS.chairHome[0], 0.56, FURNITURE_POS.chairHome[2]),
     takeoff: new THREE.Vector3(-0.76, 0, -1.32),
     yaw: 0.35,
   },
   box: {
-    perch: new THREE.Vector3(3.45, 0.055, 2.35),
+    perch: new THREE.Vector3(FURNITURE_POS.catBox[0], 0.055, FURNITURE_POS.catBox[2]),
     takeoff: new THREE.Vector3(2.92, 0, 2.15),
     yaw: -2.2,
   },
@@ -136,8 +102,8 @@ const SPOTS: Record<Exclude<SurfaceId, "floor">, SurfaceSpot> = {
 const REST_BED_PERCH = new THREE.Vector3(-1.82, 0.65, -0.68);
 const REST_BED_TAKEOFF = new THREE.Vector3(-1.24, 0, -0.5);
 const MOUSE_SPOT = new THREE.Vector3(1.18, 0, -2.25);
-const MOUSE_HOLE = new THREE.Vector3(1.27, 0.05, -2.95);
-const SCRATCH_POST = new THREE.Vector3(2.65, 0, -1.35);
+const MOUSE_HOLE = new THREE.Vector3(...FURNITURE_POS.mouseHole);
+const SCRATCH_POST = new THREE.Vector3(...FURNITURE_POS.scratcher);
 
 const FLOOR_WANDER_SPOTS: [number, number][] = [
   [0.4, 0.4],
@@ -152,22 +118,6 @@ const FLOOR_WANDER_SPOTS: [number, number][] = [
   [3.7, -0.2],
   [2.1, -0.4],
 ];
-
-const approach = (cur: number, target: number, rate: number, dt: number) =>
-  cur + (target - cur) * (1 - Math.exp(-rate * dt));
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
-function angleDelta(from: number, to: number) {
-  let d = (to - from) % (Math.PI * 2);
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
-
-function approachAngle(cur: number, target: number, rate: number, dt: number) {
-  return cur + angleDelta(cur, target) * (1 - Math.exp(-rate * dt));
-}
 
 function segmentHitsBox(ax: number, az: number, bx: number, bz: number, b: Box2D, pad: number): boolean {
   const minX = b.minX - pad;
@@ -200,15 +150,15 @@ function segmentHitsBox(ax: number, az: number, bx: number, bz: number, b: Box2D
 }
 
 function pathBlocked(ax: number, az: number, bx: number, bz: number, pad = 0.16): boolean {
-  for (const b of OBSTACLES) {
+  for (const b of CAT_OBSTACLES) {
     if (segmentHitsBox(ax, az, bx, bz, b, pad)) return true;
   }
   return false;
 }
 
 function insideBlocked(x: number, z: number): boolean {
-  if (x < CAT_MIN_X || x > CAT_MAX_X || z < CAT_MIN_Z || z > CAT_MAX_Z) return true;
-  for (const b of OBSTACLES) {
+  if (x < CAT_BOUNDS.minX || x > CAT_BOUNDS.maxX || z < CAT_BOUNDS.minZ || z > CAT_BOUNDS.maxZ) return true;
+  for (const b of CAT_OBSTACLES) {
     if (x > b.minX - CAT_MARGIN && x < b.maxX + CAT_MARGIN && z > b.minZ - CAT_MARGIN && z < b.maxZ + CAT_MARGIN) {
       return true;
     }
@@ -684,8 +634,8 @@ export class CatController {
 
         this.rubAngle += this.rubDir * dt * 1.65;
         const r = 0.37;
-        const tx = clamp(this.rubCenter.x + Math.cos(this.rubAngle) * r, CAT_MIN_X, CAT_MAX_X);
-        const tz = clamp(this.rubCenter.z + Math.sin(this.rubAngle) * r, CAT_MIN_Z, CAT_MAX_Z);
+        const tx = clamp(this.rubCenter.x + Math.cos(this.rubAngle) * r, CAT_BOUNDS.minX, CAT_BOUNDS.maxX);
+        const tz = clamp(this.rubCenter.z + Math.sin(this.rubAngle) * r, CAT_BOUNDS.minZ, CAT_BOUNDS.maxZ);
         if (!insideBlocked(tx, tz)) {
           pos.x = approach(pos.x, tx, 8, dt);
           pos.z = approach(pos.z, tz, 8, dt);
@@ -1134,8 +1084,8 @@ export class CatController {
   }
 
   private planFloorPath(tx: number, tz: number) {
-    const gx = clamp(tx, CAT_MIN_X, CAT_MAX_X);
-    const gz = clamp(tz, CAT_MIN_Z, CAT_MAX_Z);
+    const gx = clamp(tx, CAT_BOUNDS.minX, CAT_BOUNDS.maxX);
+    const gz = clamp(tz, CAT_BOUNDS.minZ, CAT_BOUNDS.maxZ);
     const cx = this.rig.root.position.x;
     const cz = this.rig.root.position.z;
 
@@ -1183,9 +1133,9 @@ export class CatController {
     const prevX = pos.x;
     const prevZ = pos.z;
 
-    const tryX = clamp(prevX + nx * step, CAT_MIN_X, CAT_MAX_X);
+    const tryX = clamp(prevX + nx * step, CAT_BOUNDS.minX, CAT_BOUNDS.maxX);
     if (!insideBlocked(tryX, prevZ)) pos.x = tryX;
-    const tryZ = clamp(prevZ + nz * step, CAT_MIN_Z, CAT_MAX_Z);
+    const tryZ = clamp(prevZ + nz * step, CAT_BOUNDS.minZ, CAT_BOUNDS.maxZ);
     if (!insideBlocked(pos.x, tryZ)) pos.z = tryZ;
 
     const moved = Math.hypot(pos.x - prevX, pos.z - prevZ);
