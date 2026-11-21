@@ -184,17 +184,42 @@ class Sound {
     [79, 76, 72].forEach((m, i) => this.tone(midi(m), 0.9, { gain: 0.15, when: i * 0.16 }));
   }
   purr() {
-    const g = this.noise(1.9, { filter: "lowpass", freq: 170, gain: 0.5, attack: 0.25, q: 1.2 });
     const ctx = this.ctx;
-    if (!g || !ctx) return;
-    // amplitude flutter at ~24 Hz is what makes filtered noise read as a purr
+    if (!ctx || !this.noiseBuf) return;
+    const t = ctx.currentTime;
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+
+    const f = ctx.createBiquadFilter();
+    f.type = "lowpass";
+    f.frequency.setValueAtTime(145, t);
+    f.Q.value = 0.85;
+
+    // Stage 1: positive 26 Hz tremolo multiplier ([0.47 .. 0.97]) so flutter never swings negative
+    const trem = ctx.createGain();
+    trem.gain.setValueAtTime(0.72, t);
     const lfo = ctx.createOscillator();
+    lfo.frequency.value = 26;
     const depth = ctx.createGain();
-    lfo.frequency.value = 24;
-    depth.gain.value = 0.35;
-    lfo.connect(depth).connect(g.gain);
-    lfo.start();
-    lfo.stop(ctx.currentTime + 2);
+    depth.gain.value = 0.25;
+    lfo.connect(depth).connect(trem.gain);
+
+    // Stage 2: outer envelope so fade-in and fade-out silence cleanly
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.085, t + 0.28);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+
+    src.connect(f).connect(trem).connect(env).connect(this.master);
+    src.start(t, Math.random());
+    src.stop(t + 1.65);
+    lfo.start(t);
+    lfo.stop(t + 1.65);
+
+    // Gentle warm throat undertone
+    this.tone(52, 1.4, { type: "sine", gain: 0.02, attack: 0.25 });
   }
   meow() {
     const ctx = this.ctx;
@@ -414,7 +439,7 @@ class Sound {
     this.radioTimer = window.setInterval(pump, 300);
   }
 
-  /** One bar of "Rhodes Drift" lo-fi: warm Rhodes chords, sub-bass, swung soft beats, vinyl, sparse melody. */
+  /** One bar of "Rhodes Drift" lo-fi: warm Rhodes chords, sub-bass, swung soft beats, vinyl. */
   private scheduleBar(when: number) {
     const out = this.music;
     const step = PROGRESSION[this.bar % PROGRESSION.length];
@@ -474,30 +499,17 @@ class Sound {
         out,
       });
     }
-
-    // 5. Sparse, drifting Rhodes melody phrase (1–3 gentle notes with breathing room)
-    if (Math.random() < 0.75) {
-      const count = Math.random() < 0.5 ? 2 : 3;
-      let cursor = when + beat * (Math.random() < 0.5 ? 0.5 : 1.5);
-      for (let i = 0; i < count; i++) {
-        const note = step.melody[Math.floor(Math.random() * step.melody.length)];
-        const dur = beat * (0.9 + Math.random() * 0.8);
-        this.rhodes(midi(note), dur, cursor, 0.052);
-        cursor += beat * (Math.random() < 0.5 ? 0.58 : 1.0);
-        if (cursor > when + BAR - beat * 0.5) break;
-      }
-    }
   }
 }
 
 const BAR = (60 / 72) * 4;
 
 // Warm Fmaj7 -> Em7 -> Dm7 -> Cmaj7 progression ("Rhodes Drift", 72 BPM)
-const PROGRESSION: { bass: number; chord: number[]; melody: number[] }[] = [
-  { bass: 41, chord: [53, 57, 60, 64, 67], melody: [69, 72, 74, 76, 79] },
-  { bass: 40, chord: [52, 55, 59, 62, 67], melody: [67, 71, 72, 74, 76] },
-  { bass: 38, chord: [50, 53, 57, 60, 64], melody: [67, 69, 72, 74, 76] },
-  { bass: 36, chord: [48, 52, 55, 59, 62], melody: [67, 71, 72, 76, 79] },
+const PROGRESSION: { bass: number; chord: number[] }[] = [
+  { bass: 41, chord: [53, 57, 60, 64, 67] },
+  { bass: 40, chord: [52, 55, 59, 62, 67] },
+  { bass: 38, chord: [50, 53, 57, 60, 64] },
+  { bass: 36, chord: [48, 52, 55, 59, 62] },
 ];
 
 export const sound = new Sound();
