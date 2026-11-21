@@ -38,6 +38,8 @@ class Sound {
   private radioTimer = 0;
   private nextBar = 0;
   private bar = 0;
+  private progIdx = 0;
+  private lastMotif = -1;
 
   unlock() {
     if (!this.ctx) {
@@ -435,6 +437,9 @@ class Sound {
     this.music.gain.cancelScheduledValues(ctx.currentTime);
     this.music.gain.setTargetAtTime(on ? 0.8 * this.radioVol : 0, ctx.currentTime, on ? 0.45 : 0.15);
     if (!on) return;
+    this.bar = 0;
+    this.progIdx = 0;
+    this.lastMotif = -1;
     this.nextBar = ctx.currentTime + 0.08;
     const pump = () => {
       if (!this.radio || !this.ctx) return;
@@ -448,11 +453,20 @@ class Sound {
     this.radioTimer = window.setInterval(pump, 300);
   }
 
-  /** One bar of "Rhodes Drift" lo-fi: warm Rhodes chords, sub-bass, swung soft beats, vinyl. */
+  /** One bar of "Rhodes Drift" lo-fi: evolving jazz chords, sub-bass, swung beats, curated pentatonic motifs. */
   private scheduleBar(when: number) {
     const out = this.music;
-    const step = PROGRESSION[this.bar % PROGRESSION.length];
+    const barInProg = this.bar % 4;
+    if (this.bar > 0 && barInProg === 0) {
+      let nextProg = Math.floor(Math.random() * PROGRESSIONS.length);
+      if (nextProg === this.progIdx && PROGRESSIONS.length > 1) {
+        nextProg = (nextProg + 1 + Math.floor(Math.random() * (PROGRESSIONS.length - 1))) % PROGRESSIONS.length;
+      }
+      this.progIdx = nextProg;
+    }
+    const step = PROGRESSIONS[this.progIdx][barInProg];
     const beat = BAR / 4;
+    const dropDrums = this.bar > 0 && barInProg === 0 && Math.random() < 0.2;
 
     // 1. Warm sub-bass on beat 1 (+ subtle pickup note near end of bar)
     this.tone(midi(step.bass), BAR * 0.78, { type: "sine", gain: 0.2, when, attack: 0.05, out });
@@ -466,38 +480,58 @@ class Sound {
       });
     }
 
-    // 2. Strummed Rhodes chord with gentle spread
+    // 2. Strummed Rhodes chord with gentle spread & subtle mid-bar variation
+    const spread = 0.036 + Math.random() * 0.016;
     step.chord.forEach((m, i) => {
-      const w = when + i * 0.042;
-      this.rhodes(midi(m), BAR * 0.92, w, 0.068);
+      const w = when + i * spread;
+      this.rhodes(midi(m), BAR * 0.92, w, 0.066);
     });
 
-    // Subtle mid-bar chord re-touch for dreamy flow
     if (Math.random() < 0.55) {
       const top = step.chord.slice(-3);
       top.forEach((m, i) => {
-        this.rhodes(midi(m), beat * 1.4, when + beat * 2.58 + i * 0.035, 0.036);
+        this.rhodes(midi(m), beat * 1.4, when + beat * 2.58 + i * 0.035, 0.034);
       });
     }
 
-    // 3. Cozy deep-focus drums (pillow kick, dragged brushed snare, swung hats)
-    for (let b = 0; b < 4; b++) {
-      const w = when + b * beat;
-      if (b === 0 || (b === 2 && Math.random() < 0.75)) {
-        this.tone(95, 0.24, { gain: 0.28, to: 38, when: w, out });
+    // 3. Cozy deep-focus drums (with occasional breathing drum drop at start of a 4-bar section)
+    if (!dropDrums) {
+      for (let b = 0; b < 4; b++) {
+        const w = when + b * beat;
+        const kickVel = 0.9 + Math.random() * 0.2;
+        if (b === 0 || (b === 2 && Math.random() < 0.75)) {
+          this.tone(95, 0.24, { gain: 0.28 * kickVel, to: 38, when: w, out });
+        }
+        if (b === 1 || b === 3) {
+          this.noise(0.15, { filter: "bandpass", freq: 1450, gain: 0.085 * kickVel, q: 0.85, when: w + 0.015, out });
+        }
+        // Swung soft hi-hat
+        this.noise(0.035, { filter: "highpass", freq: 6200, gain: 0.022 + Math.random() * 0.008, when: w + beat * 0.58, out });
+        if (Math.random() < 0.35) {
+          this.noise(0.028, { filter: "highpass", freq: 5800, gain: 0.014, when: w + beat * 0.16, out });
+        }
       }
-      if (b === 1 || b === 3) {
-        this.noise(0.15, { filter: "bandpass", freq: 1450, gain: 0.085, q: 0.85, when: w + 0.015, out });
+      // Occasional lazy ghost kick on beat 2.58
+      if (Math.random() < 0.45) {
+        this.tone(90, 0.18, { gain: 0.15, to: 40, when: when + beat * 2.58, out });
       }
-      // Swung soft hi-hat
-      this.noise(0.035, { filter: "highpass", freq: 6200, gain: 0.025, when: w + beat * 0.58, out });
-    }
-    // Occasional lazy ghost kick on beat 2.58
-    if (Math.random() < 0.45) {
-      this.tone(90, 0.18, { gain: 0.15, to: 40, when: when + beat * 2.58, out });
     }
 
-    // 4. Gentle vinyl crackle
+    // 4. Curated C-major pentatonic felt-pad motif (~55% of bars, never repeats same phrase back-to-back)
+    if (Math.random() < 0.55) {
+      let mIdx = Math.floor(Math.random() * MOTIFS.length);
+      if (mIdx === this.lastMotif) mIdx = (mIdx + 1) % MOTIFS.length;
+      this.lastMotif = mIdx;
+      for (const n of MOTIFS[mIdx]) {
+        const f = midi(n.note);
+        const w = when + n.beat * beat;
+        const dur = n.dur * beat;
+        this.tone(f, dur, { type: "sine", gain: 0.038, when: w, attack: 0.025, out });
+        this.tone(f, dur * 0.9, { type: "triangle", gain: 0.013, when: w, attack: 0.03, out });
+      }
+    }
+
+    // 5. Gentle vinyl crackle
     for (let i = 0; i < 8; i++) {
       this.noise(0.01, {
         filter: "highpass",
@@ -513,12 +547,63 @@ class Sound {
 
 const BAR = (60 / 72) * 4;
 
-// Warm Fmaj7 -> Em7 -> Dm7 -> Cmaj7 progression ("Rhodes Drift", 72 BPM)
-const PROGRESSION: { bass: number; chord: number[] }[] = [
-  { bass: 41, chord: [53, 57, 60, 64, 67] },
-  { bass: 40, chord: [52, 55, 59, 62, 67] },
-  { bass: 38, chord: [50, 53, 57, 60, 64] },
-  { bass: 36, chord: [48, 52, 55, 59, 62] },
+// 3 compatible C-major / A-minor 4-bar chord progressions ("Rhodes Drift", 72 BPM)
+const PROGRESSIONS: { bass: number; chord: number[] }[][] = [
+  // A: Fmaj7 -> Em7 -> Dm7 -> Cmaj7
+  [
+    { bass: 41, chord: [53, 57, 60, 64, 67] },
+    { bass: 40, chord: [52, 55, 59, 62, 67] },
+    { bass: 38, chord: [50, 53, 57, 60, 64] },
+    { bass: 36, chord: [48, 52, 55, 59, 62] },
+  ],
+  // B: Dm9 -> G6 -> Cmaj7 -> Am9
+  [
+    { bass: 38, chord: [50, 53, 57, 60, 64] },
+    { bass: 43, chord: [55, 59, 62, 64, 67] },
+    { bass: 36, chord: [48, 52, 55, 59, 62] },
+    { bass: 45, chord: [52, 55, 60, 64, 71] },
+  ],
+  // C: Fmaj7 -> G6 -> Em7 -> Am9
+  [
+    { bass: 41, chord: [53, 57, 60, 64, 67] },
+    { bass: 43, chord: [55, 59, 62, 64, 67] },
+    { bass: 40, chord: [52, 55, 59, 62, 67] },
+    { bass: 45, chord: [52, 55, 60, 64, 71] },
+  ],
+];
+
+// Curated C-major pentatonic motifs on swung beats (warm over every chord in PROGRESSIONS)
+const MOTIFS: { beat: number; note: number; dur: number }[][] = [
+  [
+    { beat: 0.5, note: 76, dur: 0.55 },
+    { beat: 1.0, note: 74, dur: 0.5 },
+    { beat: 1.5, note: 72, dur: 0.9 },
+    { beat: 2.58, note: 69, dur: 1.1 },
+  ],
+  [
+    { beat: 0.0, note: 67, dur: 0.5 },
+    { beat: 0.58, note: 69, dur: 0.5 },
+    { beat: 1.0, note: 72, dur: 0.6 },
+    { beat: 1.58, note: 74, dur: 0.5 },
+    { beat: 2.0, note: 76, dur: 1.4 },
+  ],
+  [
+    { beat: 1.0, note: 72, dur: 0.7 },
+    { beat: 1.58, note: 76, dur: 0.85 },
+    { beat: 2.5, note: 74, dur: 1.2 },
+  ],
+  [
+    { beat: 0.5, note: 69, dur: 0.5 },
+    { beat: 1.0, note: 72, dur: 0.55 },
+    { beat: 1.58, note: 76, dur: 0.6 },
+    { beat: 2.5, note: 74, dur: 0.5 },
+    { beat: 3.0, note: 72, dur: 0.9 },
+  ],
+  [
+    { beat: 1.5, note: 79, dur: 0.8 },
+    { beat: 2.5, note: 76, dur: 0.65 },
+    { beat: 3.0, note: 72, dur: 1.1 },
+  ],
 ];
 
 export const sound = new Sound();
