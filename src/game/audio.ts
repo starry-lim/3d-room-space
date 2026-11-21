@@ -194,32 +194,41 @@ class Sound {
 
     const f = ctx.createBiquadFilter();
     f.type = "lowpass";
-    f.frequency.setValueAtTime(145, t);
-    f.Q.value = 0.85;
+    f.frequency.setValueAtTime(260, t);
+    f.Q.value = 1.0;
 
-    // Stage 1: positive 26 Hz tremolo multiplier ([0.47 .. 0.97]) so flutter never swings negative
+    // Soft warm throat hum that flutters with the breath noise
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(115, t);
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(0.065, t);
+
+    // Stage 1: positive 25 Hz tremolo multiplier ([0.47 .. 0.97]) so flutter never swings negative
     const trem = ctx.createGain();
     trem.gain.setValueAtTime(0.72, t);
     const lfo = ctx.createOscillator();
-    lfo.frequency.value = 26;
+    lfo.frequency.value = 25;
     const depth = ctx.createGain();
     depth.gain.value = 0.25;
     lfo.connect(depth).connect(trem.gain);
 
-    // Stage 2: outer envelope so fade-in and fade-out silence cleanly
+    // Stage 2: outer envelope clearly audible on laptop speakers, fading cleanly to silence
     const env = ctx.createGain();
     env.gain.setValueAtTime(0.0001, t);
-    env.gain.exponentialRampToValueAtTime(0.085, t + 0.28);
-    env.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+    env.gain.exponentialRampToValueAtTime(0.38, t + 0.28);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 1.65);
 
-    src.connect(f).connect(trem).connect(env).connect(this.master);
+    src.connect(f).connect(trem);
+    sub.connect(subGain).connect(trem);
+    trem.connect(env).connect(this.master);
+
     src.start(t, Math.random());
-    src.stop(t + 1.65);
+    src.stop(t + 1.7);
+    sub.start(t);
+    sub.stop(t + 1.7);
     lfo.start(t);
-    lfo.stop(t + 1.65);
-
-    // Gentle warm throat undertone
-    this.tone(52, 1.4, { type: "sine", gain: 0.02, attack: 0.25 });
+    lfo.stop(t + 1.7);
   }
   meow() {
     const ctx = this.ctx;
