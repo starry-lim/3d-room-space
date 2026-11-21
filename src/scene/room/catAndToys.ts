@@ -207,13 +207,13 @@ export function buildCatToys(room: THREE.Group, refs: RoomRefs) {
   }
   const woodCap = M(PAL.wood, 0.72);
   scratcher.add(cyl(0.095, 0.095, 0.03, woodCap, 0, 0.59, 0, 16));
-  scratcher.add(rod(v(0, 0.59, 0), v(-0.2, 0.65, 0.14), 0.016, woodCap, 8));
+  scratcher.add(rod(v(0, 0.59, 0), v(0.18, 0.65, 0.16), 0.016, woodCap, 8));
 
   const pomPivot = new THREE.Group();
-  pomPivot.position.set(-0.2, 0.65, 0.14);
+  pomPivot.position.set(0.18, 0.65, 0.16);
   pomPivot.add(rod(v(0, 0, 0), v(0, -0.22, 0), 0.0035, M(PAL.cream, 0.9), 6));
   pomPivot.add(ball(0.042, M(PAL.mustard, 0.96), 0, -0.22, 0, 12, 10));
-  scratcher.add(pomPivot, hitProxy(0.56, 0.74, 0.56, -0.04, 0.36, 0.04));
+  scratcher.add(pomPivot, hitProxy(0.56, 0.74, 0.56, 0.04, 0.36, 0.05));
   room.add(scratcher);
   refs.items.scratcher = scratcher;
 

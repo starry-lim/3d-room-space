@@ -255,6 +255,8 @@ export interface RooftopSave {
   trinkets: string[];
   memoryBestMoves: number | null;
   rhythmBestScore: number;
+  deskTrinket: string | null;
+  companionTrinket: string | null;
 }
 
 export const DEFAULT_ROOFTOP: RooftopSave = {
@@ -263,6 +265,8 @@ export const DEFAULT_ROOFTOP: RooftopSave = {
   trinkets: [],
   memoryBestMoves: null,
   rhythmBestScore: 0,
+  deskTrinket: null,
+  companionTrinket: null,
 };
 
 export interface Save {
@@ -383,15 +387,16 @@ export function loadSave(): Save {
     const catName = typeof s.catName === "string" ? s.catName.trim().slice(0, 20) || "Miso" : "Miso";
     const onboarded = typeof s.onboarded === "boolean" ? s.onboarded : found.length > 0 || stars > 0;
     const rt = s.rooftop as Partial<RooftopSave> | undefined;
+    const rtTrinkets = rt && Array.isArray(rt.trinkets)
+      ? rt.trinkets.filter((x): x is string => typeof x === "string").slice(0, 30)
+      : [];
     const rooftop: RooftopSave = rt
       ? {
           tokens: Number.isFinite(rt.tokens) ? Math.max(0, Math.floor(rt.tokens as number)) : DEFAULT_ROOFTOP.tokens,
           constellations: Array.isArray(rt.constellations)
             ? rt.constellations.filter((x): x is string => typeof x === "string").slice(0, 20)
             : [],
-          trinkets: Array.isArray(rt.trinkets)
-            ? rt.trinkets.filter((x): x is string => typeof x === "string").slice(0, 30)
-            : [],
+          trinkets: rtTrinkets,
           memoryBestMoves:
             typeof rt.memoryBestMoves === "number" && Number.isFinite(rt.memoryBestMoves) && rt.memoryBestMoves > 0
               ? Math.floor(rt.memoryBestMoves)
@@ -400,6 +405,12 @@ export function loadSave(): Save {
             typeof rt.rhythmBestScore === "number" && Number.isFinite(rt.rhythmBestScore)
               ? Math.max(0, Math.floor(rt.rhythmBestScore))
               : 0,
+          deskTrinket:
+            typeof rt.deskTrinket === "string" && rtTrinkets.includes(rt.deskTrinket) ? rt.deskTrinket : null,
+          companionTrinket:
+            typeof rt.companionTrinket === "string" && rtTrinkets.includes(rt.companionTrinket)
+              ? rt.companionTrinket
+              : null,
         }
       : DEFAULT_ROOFTOP;
     return {

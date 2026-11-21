@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StudyScene, type ActivityMode, type RegionId, type SceneEvent } from "./scene/StudyScene";
 import { sound } from "./game/audio";
-import { rollTrinket, type ConstellationDef, type TrinketDef } from "./game/rooftopData";
+import { TRINKETS, rollTrinket, type ConstellationDef, type TrinketDef } from "./game/rooftopData";
 import {
+  DEFAULT_ROOFTOP,
   DISCOVERIES,
   DISCOVERY_BY_ID,
   EXERCISE_LABELS,
@@ -43,7 +44,7 @@ import {
   Veil,
   type Toast,
 } from "./ui/Hud";
-import { CapsuleMachinePanel, MemoryMatchPanel, RhythmTapPanel, StargazingPanel } from "./ui/Minigames";
+import { CapsuleMachinePanel, CollectionPanel, MemoryMatchPanel, RhythmTapPanel, StargazingPanel } from "./ui/Minigames";
 import { cn } from "./utils/cn";
 
 type PanelId =
@@ -53,6 +54,7 @@ type PanelId =
   | "avatar"
   | "exercise"
   | "radio"
+  | "shelf"
   | "stargazing"
   | "memory"
   | "rhythm"
@@ -199,7 +201,7 @@ export default function App() {
         {
           tone: isFirstTime ? "secret" : "note",
           tag: isFirstTime ? "New constellation!" : "Stargazing",
-          title: `${c.name} · ${c.zhName}`,
+          title: c.name,
           body: "+6 Energy · +2 Rooftop Tokens",
         },
         4200,
@@ -276,7 +278,28 @@ export default function App() {
         },
       };
     });
+    sceneRef.current?.triggerGachaPullAnim(trinket.accent);
     return { trinket, isNew };
+  }, []);
+
+  const toggleDeskTrinket = useCallback((id: string) => {
+    setSave((s) => ({
+      ...s,
+      rooftop: {
+        ...s.rooftop,
+        deskTrinket: s.rooftop.deskTrinket === id ? null : id,
+      },
+    }));
+  }, []);
+
+  const toggleCompanionTrinket = useCallback((id: string) => {
+    setSave((s) => ({
+      ...s,
+      rooftop: {
+        ...s.rooftop,
+        companionTrinket: s.rooftop.companionTrinket === id ? null : id,
+      },
+    }));
   }, []);
 
   const discover = useCallback(
@@ -824,7 +847,56 @@ export default function App() {
   useEffect(() => {
     sceneRef.current?.setUiOpen(panel !== null && panel !== "avatar");
     sceneRef.current?.setAvatarPreview(panel === "avatar");
+    sceneRef.current?.setFocusView(
+      panel === "stargazing" || panel === "gacha" || panel === "memory" ? panel : "none",
+    );
   }, [panel]);
+
+  useEffect(() => {
+    if (ready) {
+      sceneRef.current?.syncTrinkets(
+        save.rooftop.trinkets,
+        save.rooftop.deskTrinket,
+        save.rooftop.companionTrinket,
+      );
+    }
+  }, [ready, save.rooftop.trinkets, save.rooftop.deskTrinket, save.rooftop.companionTrinket]);
+
+  useEffect(() => {
+    const win = window as unknown as {
+      __cozyDebug?: {
+        unlockAllTrinkets: () => string;
+        clearRooftop: () => string;
+        addTokens: (n?: number) => number;
+      };
+    };
+    win.__cozyDebug = {
+      unlockAllTrinkets: () => {
+        const allIds = TRINKETS.map((t) => t.id);
+        setSave((s) => ({
+          ...s,
+          rooftop: {
+            ...s.rooftop,
+            tokens: Math.max(99, s.rooftop.tokens),
+            trinkets: allIds,
+          },
+        }));
+        return `Unlocked all ${allIds.length} standees + 99 tokens.`;
+      },
+      clearRooftop: () => {
+        setSave((s) => ({ ...s, rooftop: DEFAULT_ROOFTOP }));
+        return "Cleared rooftop progress & standees.";
+      },
+      addTokens: (n = 10) => {
+        const next = Math.max(0, saveRef.current.rooftop.tokens + Math.floor(n));
+        setSave((s) => ({ ...s, rooftop: { ...s.rooftop, tokens: next } }));
+        return next;
+      },
+    };
+    return () => {
+      delete win.__cozyDebug;
+    };
+  }, []);
 
   useEffect(() => {
     if (ready && !glError && !save.onboarded) {
@@ -990,7 +1062,7 @@ export default function App() {
 
         {/* top */}
         <div className="flex items-start justify-between gap-2">
-          <div className="flex flex-col items-start">
+          <div className="relative flex flex-col items-start">
             <Brand stars={save.stars} energy={save.energy} />
             {region === "rooftop" && (
               <div className="pointer-events-auto mt-2 flex items-center gap-2">
@@ -1010,12 +1082,14 @@ export default function App() {
               </div>
             )}
             {save.todoPinned && panel !== "todo" && (
-              <PinnedTodo
-                todos={save.todos}
-                onToggle={toggleTodo}
-                onOpenPanel={() => setPanel("todo")}
-                onUnpin={toggleTodoPin}
-              />
+              <div className="pointer-events-auto absolute left-0 top-full z-10">
+                <PinnedTodo
+                  todos={save.todos}
+                  onToggle={toggleTodo}
+                  onOpenPanel={() => setPanel("todo")}
+                  onUnpin={toggleTodoPin}
+                />
+              </div>
             )}
           </div>
           <nav className="pointer-events-auto flex flex-col gap-2 sm:flex-row" aria-label="Room tools">
@@ -1024,6 +1098,13 @@ export default function App() {
               label="Customize model & cat (K)"
               onClick={toggleModelPanel}
               pressed={panel === "avatar"}
+            />
+            <IconButton
+              icon="gift"
+              label={`Standee collection, ${save.rooftop.trinkets.length} of ${TRINKETS.length}`}
+              onClick={() => setPanel((p) => (p === "shelf" ? null : "shelf"))}
+              pressed={panel === "shelf"}
+              badge={save.rooftop.trinkets.length || undefined}
             />
             <IconButton
               icon="list"
@@ -1076,7 +1157,7 @@ export default function App() {
             </div>
           )}
           {panel === "stargazing" && (
-            <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-2">
               <StargazingPanel
                 completedIds={save.rooftop.constellations}
                 tokens={save.rooftop.tokens}
@@ -1086,17 +1167,18 @@ export default function App() {
             </div>
           )}
           {panel === "memory" && (
-            <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-2">
               <MemoryMatchPanel
                 bestMoves={save.rooftop.memoryBestMoves}
                 tokens={save.rooftop.tokens}
+                onCardEvent={(matched) => sceneRef.current?.pulseTableCards(matched)}
                 onWin={winMemoryMatch}
                 onClose={() => setPanel(null)}
               />
             </div>
           )}
           {panel === "rhythm" && (
-            <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-2">
               <RhythmTapPanel
                 bestScore={save.rooftop.rhythmBestScore}
                 tokens={save.rooftop.tokens}
@@ -1111,6 +1193,18 @@ export default function App() {
                 rooftop={save.rooftop}
                 stars={save.stars}
                 onPull={pullCapsule}
+                onToggleDesk={toggleDeskTrinket}
+                onToggleCompanion={toggleCompanionTrinket}
+                onClose={() => setPanel(null)}
+              />
+            </div>
+          )}
+          {panel === "shelf" && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-2">
+              <CollectionPanel
+                rooftop={save.rooftop}
+                onToggleDesk={toggleDeskTrinket}
+                onToggleCompanion={toggleCompanionTrinket}
                 onClose={() => setPanel(null)}
               />
             </div>

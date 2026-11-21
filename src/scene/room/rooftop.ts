@@ -12,6 +12,9 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
     fairyColors: [],
     lanternGlows: [],
     gachaKnob: new THREE.Group(),
+    gachaCapsules: [],
+    gachaDropBall: null as unknown as THREE.Mesh,
+    tableCards: [],
   };
 
   const W = ROOFTOP_ROOM.maxX - ROOFTOP_ROOM.minX;
@@ -213,6 +216,7 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
     const card = box(0.11, 0.008, 0.15, M(cardColors[i % cardColors.length], 0.82), Math.cos(a) * rad, 0.668, Math.sin(a) * rad);
     card.rotation.y = a + i * 0.4;
     table.add(card);
+    refs.tableCards.push(card);
   }
   table.add(hitProxy(1.05, 0.85, 1.05, 0, 0.42, 0));
   rooftop.add(table);
@@ -300,8 +304,21 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
     const cy = 0.78 + gr() * 0.24;
     const cap = ball(0.046, M(capPalette[i % capPalette.length], 0.55), Math.cos(a) * rad, cy, Math.sin(a) * rad, 10, 8);
     cap.castShadow = false;
+    cap.userData.baseY = cy;
     gacha.add(cap);
+    refs.gachaCapsules.push(cap);
   }
+
+  // Hidden drop capsule at chute for pull animation
+  const dropBall = new THREE.Mesh(
+    new THREE.SphereGeometry(0.055, 16, 12),
+    new THREE.MeshStandardMaterial({ color: PAL.tomato, roughness: 0.4 }),
+  );
+  dropBall.position.set(0, 0.19, 0.26);
+  dropBall.visible = false;
+  dropBall.castShadow = false;
+  gacha.add(dropBall);
+  refs.gachaDropBall = dropBall;
 
   // Turnable crank knob on the front
   const knob = new THREE.Group();

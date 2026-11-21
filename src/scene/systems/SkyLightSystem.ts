@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { discTexture } from "../kit";
 import { WINDOW } from "../layout";
 import { approach, ease, smooth } from "../math";
-import type { RoomRefs } from "../room/types";
+import type { RooftopRefs, RoomRefs } from "../room/types";
 
 export type SkyPhase = "day" | "dusk" | "night";
 
@@ -76,7 +76,8 @@ export class SkyLightSystem {
   private lamp = new THREE.SpotLight(0xffc88a, 0, 7, 0.95, 0.85, 1.7);
   private fairy = new THREE.PointLight(0xffb870, 0, 7.5, 2);
   private candle = new THREE.PointLight(0xff9a4a, 0, 4.5, 2);
-  private rooftopLight = new THREE.PointLight(0xffca85, 0, 12, 1.8);
+  private rooftopLight = new THREE.PointLight(0xffbe72, 0, 12, 1.8);
+  private rooftopLanternLight = new THREE.PointLight(0xffa852, 0, 5.5, 2);
   private roofSlab!: THREE.Mesh;
   private onRooftop = false;
 
@@ -92,6 +93,8 @@ export class SkyLightSystem {
   private candleGlow!: THREE.Sprite;
   private boxGlow!: THREE.Sprite;
   private fairyGlow!: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  private rooftopFairyGlow!: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  private rooftopLanternGlow!: THREE.Sprite;
 
   private lampLevel = 0;
   private fairyLevel = 0;
@@ -106,6 +109,7 @@ export class SkyLightSystem {
     scene: THREE.Scene,
     private fxGroup: THREE.Group,
     private refs: RoomRefs,
+    private rooftopRefs: RooftopRefs,
     private glowTex: THREE.CanvasTexture,
     mobile: boolean,
     private pixelRatio: number,
@@ -242,6 +246,8 @@ export class SkyLightSystem {
     this.beam.visible = enabled;
     this.dust.visible = enabled;
     this.boxGlow.visible = enabled;
+    this.rooftopFairyGlow.visible = !enabled;
+    this.rooftopLanternGlow.visible = !enabled;
   }
 
   getOwnedTextures(): THREE.Texture[] {
@@ -284,8 +290,24 @@ export class SkyLightSystem {
     this.fairy.position.set(-1.8, 2.35, -0.9);
     this.candle.position.set(0.5, 1.5, -2.72);
     this.rooftopLight.position.set(0, 2.5, 0);
+    if (this.rooftopRefs.items.rhythmBox) {
+      this.rooftopRefs.items.rhythmBox.localToWorld(this.rooftopLanternLight.position.set(0.36, 0.72, -0.02));
+    } else {
+      this.rooftopLanternLight.position.set(2.25, 0.85, -1.72);
+    }
 
-    scene.add(this.hemi, sun, sun.target, this.bounce, lamp, lamp.target, this.fairy, this.candle, this.rooftopLight);
+    scene.add(
+      this.hemi,
+      sun,
+      sun.target,
+      this.bounce,
+      lamp,
+      lamp.target,
+      this.fairy,
+      this.candle,
+      this.rooftopLight,
+      this.rooftopLanternLight,
+    );
 
     // The diorama has no roof, so without this the sun would flood the whole floor.
     // This slab draws nothing on screen but still casts a shadow, which means
@@ -504,6 +526,43 @@ export class SkyLightSystem {
     );
     this.fairyGlow.frustumCulled = false;
     this.fxGroup.add(this.fairyGlow);
+
+    const rtBulbs = this.rooftopRefs.fairyBulbs;
+    const rtPos = new Float32Array(rtBulbs.count * 3);
+    const rtCol = new Float32Array(rtBulbs.count * 3);
+    for (let i = 0; i < rtBulbs.count; i++) {
+      rtBulbs.getMatrixAt(i, m);
+      this.tmpV.setFromMatrixPosition(m);
+      rtPos.set([this.tmpV.x, this.tmpV.y, this.tmpV.z], i * 3);
+      this.rooftopRefs.fairyColors[i].toArray(rtCol, i * 3);
+    }
+    const rtGeo = new THREE.BufferGeometry();
+    rtGeo.setAttribute("position", new THREE.BufferAttribute(rtPos, 3));
+    rtGeo.setAttribute("color", new THREE.BufferAttribute(rtCol, 3));
+    this.rooftopFairyGlow = new THREE.Points(
+      rtGeo,
+      new THREE.PointsMaterial({
+        size: 0.52,
+        map: soft,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
+    );
+    this.rooftopFairyGlow.frustumCulled = false;
+    this.rooftopFairyGlow.visible = false;
+    this.fxGroup.add(this.rooftopFairyGlow);
+
+    this.rooftopLanternGlow = mkGlow(0xffb45c, 0.85);
+    if (this.rooftopRefs.items.rhythmBox) {
+      this.rooftopRefs.items.rhythmBox.localToWorld(this.rooftopLanternGlow.position.set(0.36, 0.56, -0.02));
+    } else {
+      this.rooftopLanternGlow.position.set(2.25, 0.56, -1.72);
+    }
+    this.rooftopLanternGlow.visible = false;
   }
 
   private updateBeam(toSun: THREE.Vector3): void {
@@ -557,7 +616,10 @@ export class SkyLightSystem {
 
     this.fairy.intensity = studyFade * this.fairyLevel * (3.5 + 5.5 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1));
     this.fairyGlow.material.opacity = studyFade * this.fairyLevel * (0.3 + 0.35 * dark);
-    this.rooftopLight.intensity = this.onRooftop ? (1.6 + 4.2 * dark) * (0.96 + 0.04 * Math.sin(t * 1.9)) : 0;
+    this.rooftopLight.intensity = this.onRooftop ? (2.4 + 6.2 * dark) * (0.96 + 0.04 * Math.sin(t * 1.9)) : 0;
+    this.rooftopLanternLight.intensity = this.onRooftop ? (1.4 + 3.8 * dark) * (0.93 + 0.07 * Math.sin(t * 3.1)) : 0;
+    this.rooftopFairyGlow.material.opacity = this.onRooftop ? (0.34 + 0.46 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1)) : 0;
+    this.rooftopLanternGlow.material.opacity = this.onRooftop ? (0.28 + 0.44 * dark) * (0.92 + 0.08 * Math.sin(t * 3.1)) : 0;
     const bulbs = refs.fairyBulbs;
     for (let i = 0; i < bulbs.count; i++) {
       const tw = 0.8 + 0.2 * Math.sin(t * 2.4 + i * 1.9) + 0.12 * Math.sin(t * 5.3 + i * 0.7);

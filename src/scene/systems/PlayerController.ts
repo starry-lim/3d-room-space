@@ -38,6 +38,8 @@ export interface MoveSfxDetail {
   strength?: number;
 }
 
+export type FocusViewMode = "none" | "stargazing" | "gacha" | "memory";
+
 export interface ItemEntry {
   id: InteractId;
   root: THREE.Object3D;
@@ -109,6 +111,7 @@ export class PlayerController {
   private tpPitch = 0.3;
   private tpDist = 2.35;
   private camTween: Tween | null = null;
+  private preFocus: { pos: THREE.Vector3; yaw: number; pitch: number } | null = null;
 
   private dragging = false;
   private dragStart: { x: number; y: number; yaw: number; pitch: number } | null = null;
@@ -339,6 +342,34 @@ export class PlayerController {
     }
   }
 
+  setFocusView(mode: FocusViewMode): void {
+    if (this.activity !== "none" || this.resting) return;
+    if (mode !== "none") {
+      if (!this.preFocus) {
+        this.preFocus = {
+          pos: this.deps.camera.position.clone(),
+          yaw: this.yaw,
+          pitch: this.pitch,
+        };
+      }
+      this.unlockPointer();
+      this.keys.clear();
+      if (mode === "stargazing") {
+        this.glideCameraTo(new THREE.Vector3(-1.85, 1.55, -1.85), -0.65, 0.68, 0.65);
+      } else if (mode === "gacha") {
+        // Capsule machine at (2.15, 0, 0.95): frame center-left while right side holds UI
+        this.glideCameraTo(new THREE.Vector3(0.95, 1.15, 1.85), -1.14, -0.22, 0.65);
+      } else if (mode === "memory") {
+        // Angled overhead view centered on the patio game table at (-1.75, 0.65, 0.75)
+        this.glideCameraTo(new THREE.Vector3(-1.05, 1.92, 1.48), 0.76, -0.9, 0.65);
+      }
+    } else if (this.preFocus) {
+      const prev = this.preFocus;
+      this.preFocus = null;
+      this.glideCameraTo(prev.pos, prev.yaw, prev.pitch, 0.5);
+    }
+  }
+
   setRegion(
     root: THREE.Group,
     bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
@@ -347,6 +378,7 @@ export class PlayerController {
     spawnYaw: number,
     spawnPitch: number,
   ): void {
+    this.preFocus = null;
     this.cancelCamTween();
     this.unlockPointer();
     this.keys.clear();

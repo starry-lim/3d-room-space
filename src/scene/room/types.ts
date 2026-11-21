@@ -43,6 +43,9 @@ export interface RooftopRefs {
   fairyColors: THREE.Color[];
   lanternGlows: THREE.MeshStandardMaterial[];
   gachaKnob: THREE.Object3D;
+  gachaCapsules: THREE.Object3D[];
+  gachaDropBall: THREE.Mesh;
+  tableCards: THREE.Mesh[];
 }
 
 export interface CatRig {

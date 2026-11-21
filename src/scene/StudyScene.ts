@@ -30,14 +30,15 @@ import { drawLaptopScreen, drawTodoBoard, type TimerView } from "./systems/Canva
 import { CatToySystem, type ToySfxKind } from "./systems/CatToySystem";
 import { FxSystem } from "./systems/FxSystem";
 import { AvatarActivitySystem } from "./systems/AvatarActivitySystem";
-import { PlayerController, type ItemEntry, type MoveSfxDetail } from "./systems/PlayerController";
+import { PlayerController, type FocusViewMode, type ItemEntry, type MoveSfxDetail } from "./systems/PlayerController";
 import { SkyLightSystem, type SkyPhase } from "./systems/SkyLightSystem";
+import { buildAcrylicStandee, disposeTrinketTextures } from "./trinketTextures";
 
 export type { CatSfx } from "./CatController";
 export type { InteractId } from "./furniture";
 export type { ActivityMode, RegionId } from "./layout";
 export type { TimerView } from "./systems/CanvasDisplays";
-export type { MoveSfxDetail } from "./systems/PlayerController";
+export type { FocusViewMode, MoveSfxDetail } from "./systems/PlayerController";
 export type { SkyPhase } from "./systems/SkyLightSystem";
 
 export interface SceneEvent {
@@ -108,6 +109,14 @@ export class StudyScene {
   private rooftopRefs: RooftopRefs;
   private region: RegionId = "study";
   private gachaSpin = 0;
+  private gachaPullAnim = 0;
+  private cardPulse = 0;
+  private shelfStandees = new THREE.Group();
+  private deskStandeeSlot = new THREE.Group();
+  private companionStandee: THREE.Group | null = null;
+  private ownedKey = "";
+  private deskKey: string | null = null;
+  private companionKey: string | null = null;
   private fxGroup = new THREE.Group();
   private ro: ResizeObserver;
   private raf = 0;
@@ -191,6 +200,9 @@ export class StudyScene {
     rooftop.visible = false;
     this.rooftop = rooftop;
     this.rooftopRefs = rtRefs;
+    this.deskStandeeSlot.position.set(0.74, 0.79, -2.32);
+    this.deskStandeeSlot.rotation.y = -0.22;
+    room.add(this.shelfStandees, this.deskStandeeSlot);
     this.scene.add(room, rooftop, this.fxGroup);
     room.updateMatrixWorld(true);
     rooftop.updateMatrixWorld(true);
@@ -200,6 +212,7 @@ export class StudyScene {
       this.scene,
       this.fxGroup,
       refs,
+      rtRefs,
       this.fxSys.glowTex,
       mobile,
       this.pixelRatio,
@@ -397,6 +410,91 @@ export class StudyScene {
     this.player.setAvatarPreview(on);
   }
 
+  setFocusView(mode: FocusViewMode): void {
+    this.player.setFocusView(mode);
+  }
+
+  triggerGachaPullAnim(accentHex?: string): void {
+    this.gachaSpin = 1;
+    this.gachaPullAnim = 1;
+    const drop = this.rooftopRefs.gachaDropBall;
+    if (drop) {
+      (drop.material as THREE.MeshStandardMaterial).color.set(accentHex ?? "#e4572e");
+      drop.visible = true;
+    }
+    const gachaRoot = this.rooftopRefs.items.gacha;
+    if (gachaRoot) {
+      const p = gachaRoot.getWorldPosition(this.tmpV2);
+      p.y += 0.9;
+      this.fxSys.emit("spark", p, 12, {
+        colors: [0xffd76a, 0xff8a65, 0xfff3d6],
+        spread: 0.9,
+        up: 1.25,
+        grav: 1.1,
+        size: 0.14,
+        life: 1.2,
+      });
+    }
+  }
+
+  pulseTableCards(matched = false): void {
+    this.cardPulse = matched ? 1 : 0.6;
+  }
+
+  syncTrinkets(ownedIds: string[], deskId: string | null, companionId: string | null): void {
+    const clearStandeeGroup = (g: THREE.Group) => {
+      g.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) {
+          const mesh = o as THREE.Mesh;
+          mesh.geometry.dispose();
+          const mat = mesh.material;
+          if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+          else mat?.dispose();
+        }
+      });
+      g.clear();
+    };
+
+    const nextOwnedKey = ownedIds.join(",");
+    if (nextOwnedKey !== this.ownedKey) {
+      this.ownedKey = nextOwnedKey;
+      clearStandeeGroup(this.shelfStandees);
+      ownedIds.slice(0, 12).forEach((id, i) => {
+        const row = i < 6 ? 0 : 1;
+        const col = i % 6;
+        const s = buildAcrylicStandee(id, row === 0 ? 0.68 : 0.72);
+        // Upper-right open shelf (y = 1.70) & bookshelf top right (y = 2.30)
+        s.position.set(2.24 + col * 0.105, row === 0 ? 1.7 : 2.3, -2.68);
+        this.shelfStandees.add(s);
+      });
+    }
+
+    if (deskId !== this.deskKey) {
+      this.deskKey = deskId;
+      clearStandeeGroup(this.deskStandeeSlot);
+      if (deskId && ownedIds.includes(deskId)) {
+        this.deskStandeeSlot.add(buildAcrylicStandee(deskId, 0.92));
+      }
+    }
+
+    if (companionId !== this.companionKey) {
+      this.companionKey = companionId;
+      if (this.companionStandee) {
+        this.companionStandee.parent?.remove(this.companionStandee);
+        clearStandeeGroup(this.companionStandee);
+        this.companionStandee = null;
+      }
+      if (companionId && ownedIds.includes(companionId)) {
+        const comp = buildAcrylicStandee(companionId, 0.72);
+        comp.position.copy(this.player.playerPos);
+        comp.position.y += 0.95;
+        const activeRoot = this.region === "rooftop" ? this.rooftop : this.room;
+        activeRoot.add(comp);
+        this.companionStandee = comp;
+      }
+    }
+  }
+
   setRegion(next: RegionId): void {
     if (next === this.region) return;
     if (this.player.resting) this.setResting(false);
@@ -405,6 +503,7 @@ export class StudyScene {
 
     const dest = next === "rooftop" ? this.rooftop : this.room;
     dest.add(this.refs.avatar.root);
+    if (this.companionStandee) dest.add(this.companionStandee);
     this.room.visible = next === "study";
     this.rooftop.visible = next === "rooftop";
     this.skyLight.setRoofShadowEnabled(next === "study");
@@ -520,6 +619,7 @@ export class StudyScene {
     this.tweens.clear();
     this.refs.avatar.dispose();
     disposeObjectTree(this.scene, [...this.fxSys.getOwnedTextures(), ...this.skyLight.getOwnedTextures()]);
+    disposeTrinketTextures();
     this.skyLight.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -822,9 +922,25 @@ export class StudyScene {
       onSipDone: () => this.player.markHoverDirty(),
     });
 
+    if (this.companionStandee) {
+      const yaw = this.player.yaw;
+      const rightX = Math.cos(yaw);
+      const rightZ = -Math.sin(yaw);
+      const fwdX = -Math.sin(yaw);
+      const fwdZ = -Math.cos(yaw);
+      const tx = this.player.playerPos.x + rightX * 0.46 + fwdX * 0.2;
+      const tz = this.player.playerPos.z + rightZ * 0.46 + fwdZ * 0.2;
+      const ty = this.player.playerPos.y + 0.94 + Math.sin(t * 2.4) * 0.05;
+      this.companionStandee.position.x = approach(this.companionStandee.position.x, tx, 8, dt);
+      this.companionStandee.position.y = approach(this.companionStandee.position.y, ty, 8, dt);
+      this.companionStandee.position.z = approach(this.companionStandee.position.z, tz, 8, dt);
+      this.companionStandee.visible = !this.player.resting;
+      this.companionStandee.lookAt(this.camera.position.x, this.companionStandee.position.y, this.camera.position.z);
+    }
+
     if (this.region === "rooftop") {
       const bulbs = this.rooftopRefs.fairyBulbs;
-      const darkBoost = 0.65 + 0.55 * this.skyLight.dark;
+      const darkBoost = 0.88 + 0.62 * this.skyLight.dark;
       for (let i = 0; i < bulbs.count; i++) {
         const tw = 0.78 + 0.22 * Math.sin(t * 2.2 + i * 1.4);
         this.tmpC.copy(this.rooftopRefs.fairyColors[i]).multiplyScalar(tw * darkBoost);
@@ -837,6 +953,27 @@ export class StudyScene {
       if (this.gachaSpin > 0) {
         this.gachaSpin = Math.max(0, this.gachaSpin - dt * 1.6);
         this.rooftopRefs.gachaKnob.rotation.z = Math.sin(this.gachaSpin * Math.PI) * Math.PI * 2;
+      }
+      if (this.gachaPullAnim > 0) {
+        this.gachaPullAnim = Math.max(0, this.gachaPullAnim - dt * 1.15);
+        const shake = this.gachaPullAnim;
+        this.rooftopRefs.gachaCapsules.forEach((cap, idx) => {
+          const baseY = (cap.userData.baseY as number | undefined) ?? cap.position.y;
+          cap.position.y = baseY + Math.sin(t * 28 + idx * 1.3) * 0.018 * shake;
+        });
+        const drop = this.rooftopRefs.gachaDropBall;
+        if (drop) {
+          const prog = 1 - this.gachaPullAnim;
+          drop.position.set(0, 0.19 + Math.abs(Math.sin(prog * Math.PI * 2.5)) * 0.065 * shake, 0.26 + prog * 0.11);
+          if (this.gachaPullAnim <= 0.01) drop.visible = false;
+        }
+      }
+      if (this.cardPulse > 0) {
+        this.cardPulse = Math.max(0, this.cardPulse - dt * 2.2);
+        const lift = Math.sin(this.cardPulse * Math.PI) * 0.032;
+        for (const card of this.rooftopRefs.tableCards) {
+          card.position.y = 0.668 + lift;
+        }
       }
       return;
     }

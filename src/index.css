@@ -230,15 +230,60 @@ body {
   animation: breathe 2.6s ease-in-out infinite;
 }
 
+@keyframes pop-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.55) rotate(-6deg);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.08) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.anim-pop {
+  animation: pop-reveal 0.42s cubic-bezier(0.2, 1.15, 0.35, 1) both;
+}
+
+/* 3D flip card utilities for Memory Match */
+.card-3d {
+  perspective: 720px;
+}
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.38s cubic-bezier(0.25, 0.9, 0.35, 1.15);
+}
+.card-inner.flipped {
+  transform: rotateY(180deg);
+}
+.card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.card-face-front {
+  transform: rotateY(180deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .anim-rise,
   .anim-drop,
   .anim-slide,
   .anim-stamp,
-  .anim-breathe {
+  .anim-breathe,
+  .anim-pop {
     animation: none;
   }
-  .press {
+  .press,
+  .card-inner {
     transition: none;
   }
 }

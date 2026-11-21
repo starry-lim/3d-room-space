@@ -395,12 +395,6 @@ function renderFigureArt(id: string) {
 /* 1. Stargazing Constellation Connect                                 */
 /* ------------------------------------------------------------------ */
 
-const BG_STARS: [number, number, number][] = [
-  [10, 14, 0.9], [22, 10, 0.6], [85, 16, 1.1], [90, 38, 0.7], [14, 42, 0.8],
-  [82, 74, 0.9], [16, 86, 0.7], [46, 12, 0.6], [68, 12, 0.8], [92, 62, 0.6],
-  [8, 66, 1.0], [66, 88, 0.7], [38, 90, 0.8], [88, 88, 0.6],
-];
-
 export function StargazingPanel({
   completedIds,
   tokens,
@@ -446,184 +440,172 @@ export function StargazingPanel({
     }
   };
 
-  // Unique dot visuals so overlapping start/end vertices still look clean
+  // Single top-priority click target so overlapping start/end vertices never swallow clicks
   const nextCoord = !finishedThisRound && step < totalStars ? cur.stars[step] : null;
 
   return (
     <aside
       role="dialog"
       aria-label="Rooftop Stargazing"
-      className="paper anim-slide pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] sm:w-[410px]"
+      className="pointer-events-none flex max-h-full w-full max-w-[540px] flex-col items-center justify-between gap-2"
     >
-      <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
-        <div>
-          <h2 className="font-display text-[25px] font-semibold italic leading-none">Stargazing</h2>
-          <p className="mt-1.5 text-[12px] font-semibold text-ink-soft">
-            Connect the stars in order · {completedIds.length}/{CONSTELLATIONS.length} charted · {tokens} Tokens
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Close stargazing"
-          onClick={onClose}
-          className="-mr-1 -mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
-        >
-          <Icon name="x" />
-        </button>
-      </header>
-
-      {/* Constellation picker */}
-      <div className="mt-3 flex flex-wrap gap-1.5 px-4 sm:px-5">
-        {CONSTELLATIONS.map((c, idx) => {
-          const done = completedIds.includes(c.id);
-          const active = idx === selectedIdx;
-          return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => selectConstellation(idx)}
-              className={cn(
-                "rounded-full border-[1.5px] border-ink px-2.5 py-1 text-[11.5px] font-extrabold transition-colors",
-                active ? "bg-mustard text-ink" : done ? "bg-sage/30 text-ink hover:bg-sage/45" : "bg-white/70 text-ink-soft hover:bg-paper-deep",
-              )}
-            >
-              {done ? "✓ " : ""}{c.zhName}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Interactive sky */}
-      <div className="px-4 pt-3 sm:px-5">
-        <div className="relative overflow-hidden rounded-[20px] border-[1.5px] border-ink bg-[#1b1830] shadow-inner">
-          <svg viewBox="0 0 100 100" className="block aspect-square w-full select-none">
-            {/* Ambient distant stars */}
-            {BG_STARS.map(([x, y, r], i) => (
-              <circle key={i} cx={x} cy={y} r={r} fill="#fff7dc" opacity={0.35 + (i % 3) * 0.16} />
-            ))}
-
-            {/* Ghost guide lines */}
-            {cur.stars.slice(0, -1).map(([x1, y1], i) => {
-              const [x2, y2] = cur.stars[i + 1];
-              return (
-                <line
-                  key={`g-${i}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="#9fb4ff"
-                  strokeWidth="0.6"
-                  strokeDasharray="1.8 1.8"
-                  opacity="0.32"
-                />
-              );
-            })}
-            {cur.extraEdges?.map(([a, b], i) => {
-              const [x1, y1] = cur.stars[a];
-              const [x2, y2] = cur.stars[b];
-              const show = finishedThisRound || (step > a && step > b);
-              return (
-                <line
-                  key={`ex-${i}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke={show ? "#f6c95d" : "#9fb4ff"}
-                  strokeWidth={show ? "1.3" : "0.6"}
-                  strokeDasharray={show ? undefined : "1.8 1.8"}
-                  opacity={show ? 0.95 : 0.25}
-                />
-              );
-            })}
-
-            {/* Connected golden lines */}
-            {cur.stars.slice(0, Math.max(0, step - 1)).map(([x1, y1], i) => {
-              const [x2, y2] = cur.stars[i + 1];
-              return (
-                <line
-                  key={`c-${i}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="#f6c95d"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              );
-            })}
-
-            {/* Star nodes */}
-            {cur.stars.map(([x, y], i) => {
-              const lit = i < step;
-              const isNext = !finishedThisRound && i === step;
-              return (
-                <g key={`st-${i}`}>
-                  {isNext && (
-                    <circle cx={x} cy={y} r="5.5" fill="none" stroke="#f6c95d" strokeWidth="0.9" opacity="0.75">
-                      <animate attributeName="r" values="4.2;6.5;4.2" dur="1.6s" repeatCount="indefinite" />
-                    </circle>
-                  )}
-                  <circle
-                    cx={x}
-                    cy={y}
-                    r={lit ? 2.6 : isNext ? 3 : 2}
-                    fill={lit || isNext ? "#ffe799" : "#b8c7f2"}
-                    stroke="#1b1830"
-                    strokeWidth="0.6"
-                  />
-                </g>
-              );
-            })}
-
-            {/* Single top-priority click target so overlapping start/end vertices never swallow clicks */}
-            {nextCoord && (
-              <circle
-                cx={nextCoord[0]}
-                cy={nextCoord[1]}
-                r="8.5"
-                fill="transparent"
-                className="cursor-pointer"
-                onClick={() => handleStarClick(step)}
-              />
-            )}
-          </svg>
-
-          <div className="pointer-events-none absolute left-3 top-2.5 rounded-full bg-night/75 px-2.5 py-0.5 text-[11px] font-bold text-[#f7eedc]">
-            {finishedThisRound ? "Charted!" : `Tap highlighted star (${step + 1}/${totalStars})`}
+      {/* Top compact paper bar */}
+      <div className="paper anim-rise pointer-events-auto w-full rounded-[22px] px-4 py-3">
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-[22px] font-semibold italic leading-none">Stargazing</h2>
+            <p className="mt-1 text-[11.5px] font-semibold text-ink-soft">
+              Connect the stars in order · {completedIds.length}/{CONSTELLATIONS.length} charted · {tokens} Tokens
+            </p>
           </div>
+          <button
+            type="button"
+            aria-label="Close stargazing"
+            onClick={onClose}
+            className="-mr-1 -mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
+          >
+            <Icon name="x" />
+          </button>
+        </header>
+
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {CONSTELLATIONS.map((c, idx) => {
+            const done = completedIds.includes(c.id);
+            const active = idx === selectedIdx;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => selectConstellation(idx)}
+                className={cn(
+                  "rounded-full border-[1.5px] border-ink px-2.5 py-0.5 text-[11px] font-extrabold transition-colors",
+                  active ? "bg-mustard text-ink" : done ? "bg-sage/30 text-ink hover:bg-sage/45" : "bg-white/75 text-ink-soft hover:bg-paper-deep",
+                )}
+              >
+                {done ? "✓ " : ""}{c.name}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Footer / Completion info */}
-      <div className="p-4 sm:p-5">
+      {/* Live 3D sky eyepiece reticle */}
+      <div className="pointer-events-auto relative h-[min(48vh,340px)] w-[min(48vh,340px)] shrink-0 overflow-hidden rounded-full border-2 border-mustard/45 bg-[#120f24]/25 backdrop-blur-[1px]">
+        <svg viewBox="0 0 100 100" className="block h-full w-full select-none">
+          {/* Ghost guide lines */}
+          {cur.stars.slice(0, -1).map(([x1, y1], i) => {
+            const [x2, y2] = cur.stars[i + 1];
+            return (
+              <line
+                key={`g-${i}`}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke="#cfe0ff"
+                strokeWidth="0.6"
+                strokeDasharray="1.8 1.8"
+                opacity="0.38"
+              />
+            );
+          })}
+          {cur.extraEdges?.map(([a, b], i) => {
+            const [x1, y1] = cur.stars[a];
+            const [x2, y2] = cur.stars[b];
+            const show = finishedThisRound || (step > a && step > b);
+            return (
+              <line
+                key={`ex-${i}`}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke={show ? "#f6c95d" : "#cfe0ff"}
+                strokeWidth={show ? "1.4" : "0.6"}
+                strokeDasharray={show ? undefined : "1.8 1.8"}
+                opacity={show ? 0.95 : 0.3}
+              />
+            );
+          })}
+
+          {/* Connected golden lines */}
+          {cur.stars.slice(0, Math.max(0, step - 1)).map(([x1, y1], i) => {
+            const [x2, y2] = cur.stars[i + 1];
+            return (
+              <line
+                key={`c-${i}`}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke="#f6c95d"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            );
+          })}
+
+          {/* Star nodes */}
+          {cur.stars.map(([x, y], i) => {
+            const lit = i < step;
+            const isNext = !finishedThisRound && i === step;
+            return (
+              <g key={`st-${i}`}>
+                {isNext && (
+                  <circle cx={x} cy={y} r="5.5" fill="none" stroke="#f6c95d" strokeWidth="1" opacity="0.85">
+                    <animate attributeName="r" values="4.2;6.8;4.2" dur="1.6s" repeatCount="indefinite" />
+                  </circle>
+                )}
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={lit ? 2.6 : isNext ? 3 : 2}
+                  fill={lit || isNext ? "#ffe799" : "#d9e4ff"}
+                  stroke="#120f24"
+                  strokeWidth="0.6"
+                />
+              </g>
+            );
+          })}
+
+          {nextCoord && (
+            <circle
+              cx={nextCoord[0]}
+              cy={nextCoord[1]}
+              r="8.5"
+              fill="transparent"
+              className="cursor-pointer"
+              onClick={() => handleStarClick(step)}
+            />
+          )}
+        </svg>
+      </div>
+
+      {/* Bottom compact paper bar */}
+      <div className="paper anim-rise pointer-events-auto w-full rounded-[20px] px-4 py-2.5">
         {finishedThisRound ? (
-          <div className="rounded-2xl border-[1.5px] border-ink bg-white/75 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-display text-[17px] font-semibold leading-tight">
-                {cur.name} · {cur.zhName}
-              </p>
-              <span className="rounded-full border border-ink bg-mustard px-2 py-0.5 text-[11px] font-extrabold">
-                +6 Energy · +2 Tokens
-              </span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-display text-[16.5px] font-semibold leading-tight">{cur.name}</p>
+                <span className="rounded-full border border-ink bg-mustard px-2 py-0.5 text-[10.5px] font-extrabold">
+                  +6 Energy · +2 Tokens
+                </span>
+              </div>
+              <p className="mt-0.5 text-[11.5px] leading-snug text-ink-soft">{cur.note}</p>
             </div>
-            <p className="mt-1 text-[12px] leading-snug text-ink-soft">{cur.note}</p>
-            <div className="mt-2.5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => selectConstellation((selectedIdx + 1) % CONSTELLATIONS.length)}
-                className="press rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
-              >
-                Next Constellation
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => selectConstellation((selectedIdx + 1) % CONSTELLATIONS.length)}
+              className="press shrink-0 rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
+            >
+              Next Constellation
+            </button>
           </div>
         ) : (
-          <div className="flex items-center justify-between text-[12.5px] font-semibold text-ink-soft">
+          <div className="flex items-center justify-between gap-2 text-[12px] font-semibold text-ink-soft">
             <span>
-              {cur.name} ({cur.zhName})
+              <strong className="text-ink">{cur.name}</strong> · Tap highlighted star ({step + 1}/{totalStars})
             </span>
             <span>Reward: +6 Energy · +2 Tokens</span>
           </div>
@@ -657,11 +639,13 @@ function buildDeck(pairCount: number): CardTile[] {
 export function MemoryMatchPanel({
   bestMoves,
   tokens,
+  onCardEvent,
   onWin,
   onClose,
 }: {
   bestMoves: number | null;
   tokens: number;
+  onCardEvent?: (matched: boolean) => void;
   onWin: (moves: number) => void;
   onClose: () => void;
 }) {
@@ -694,6 +678,7 @@ export function MemoryMatchPanel({
   const flipCard = (idx: number) => {
     if (won || picked.length >= 2 || cards[idx].flipped || cards[idx].matched) return;
     sound.pop();
+    onCardEvent?.(false);
     const nextCards = cards.map((c, i) => (i === idx ? { ...c, flipped: true } : c));
     const nextPicked = [...picked, idx];
     setCards(nextCards);
@@ -705,6 +690,7 @@ export function MemoryMatchPanel({
       const [a, b] = nextPicked;
       if (nextCards[a].def.id === nextCards[b].def.id) {
         sound.rhythmNote(2);
+        onCardEvent?.(true);
         const solved = nextCards.map((c, i) => (i === a || i === b ? { ...c, matched: true } : c));
         setCards(solved);
         setPicked([]);
@@ -727,7 +713,7 @@ export function MemoryMatchPanel({
     <aside
       role="dialog"
       aria-label="Cozy Memory Match"
-      className="paper anim-slide pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] sm:w-[400px]"
+      className="paper anim-rise pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] bg-paper/92 backdrop-blur-xs sm:w-[420px]"
     >
       <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
         <div>
@@ -746,78 +732,81 @@ export function MemoryMatchPanel({
         </button>
       </header>
 
-      <div className="mt-3 flex items-center justify-between gap-2 px-4 sm:px-5">
-        <div className="flex gap-1.5">
-          {([6, 8] as const).map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => startNew(n)}
-              className={cn(
-                "rounded-full border-[1.5px] border-ink px-2.5 py-1 text-[11.5px] font-extrabold",
-                pairCount === n ? "bg-mustard text-ink" : "bg-white/70 text-ink-soft hover:bg-paper-deep",
-              )}
-            >
-              {n === 6 ? "4×3 Cozy" : "4×4 Full"}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => startNew(pairCount)}
-          className="rounded-full border-[1.5px] border-ink bg-white/80 px-2.5 py-1 text-[11.5px] font-extrabold hover:bg-paper-deep"
-        >
-          Shuffle
-        </button>
-      </div>
-
-      <div className="grid grid-cols-4 gap-2 p-4 sm:p-5">
-        {cards.map((card, i) => {
-          const open = card.flipped || card.matched;
-          return (
-            <button
-              key={card.uid}
-              type="button"
-              onClick={() => flipCard(i)}
-              disabled={open}
-              style={open ? { backgroundColor: card.def.bg, borderColor: card.def.accent } : undefined}
-              className={cn(
-                "press relative flex aspect-square flex-col items-center justify-center rounded-2xl border-[1.5px] transition-transform",
-                open
-                  ? card.matched
-                    ? "scale-[0.97] opacity-90"
-                    : "border-ink"
-                  : "border-ink bg-paper-deep hover:bg-mustard/35",
-              )}
-            >
-              {open ? (
-                <>
-                  <span className="text-[24px] leading-none">{card.def.symbol}</span>
-                  <span className="mt-1 text-[10px] font-extrabold text-ink/80">{card.def.label}</span>
-                </>
-              ) : (
-                <span className="text-[16px] text-ink/40">✦</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {won && (
-        <div className="mx-4 mb-4 flex items-center justify-between gap-2 rounded-2xl border-[1.5px] border-ink bg-white/80 px-3.5 py-2.5 sm:mx-5 sm:mb-5">
-          <div>
-            <p className="font-display text-[15px] font-semibold">Cleared in {moves} moves!</p>
-            <p className="text-[11.5px] font-semibold text-ink-soft">+6 Energy · +2 Rooftop Tokens</p>
+      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto">
+        <div className="mt-3 flex items-center justify-between gap-2 px-4 sm:px-5">
+          <div className="flex gap-1.5">
+            {([6, 8] as const).map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => startNew(n)}
+                className={cn(
+                  "rounded-full border-[1.5px] border-ink px-2.5 py-1 text-[11.5px] font-extrabold",
+                  pairCount === n ? "bg-mustard text-ink" : "bg-white/75 text-ink-soft hover:bg-paper-deep",
+                )}
+              >
+                {n === 6 ? "4×3 Cozy" : "4×4 Full"}
+              </button>
+            ))}
           </div>
           <button
             type="button"
             onClick={() => startNew(pairCount)}
-            className="press rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
+            className="rounded-full border-[1.5px] border-ink bg-white/80 px-2.5 py-1 text-[11.5px] font-extrabold hover:bg-paper-deep"
           >
-            Play Again
+            Shuffle
           </button>
         </div>
-      )}
+
+        <div className="grid grid-cols-4 gap-2.5 p-4 sm:p-5">
+          {cards.map((card, i) => {
+            const open = card.flipped || card.matched;
+            return (
+              <button
+                key={card.uid}
+                type="button"
+                onClick={() => flipCard(i)}
+                disabled={open}
+                className="card-3d relative aspect-square cursor-pointer rounded-2xl focus-visible:outline-mustard"
+              >
+                <div className={cn("card-inner", open && "flipped")}>
+                  {/* Card Back */}
+                  <div className="card-face flex flex-col items-center justify-center rounded-2xl border-[1.5px] border-ink bg-paper-deep/95 shadow-[2px_2px_0_var(--color-ink)] transition-colors hover:bg-mustard/40">
+                    <span className="text-[18px] text-ink/45">✦</span>
+                  </div>
+                  {/* Card Front */}
+                  <div
+                    style={{ backgroundColor: card.def.bg, borderColor: card.def.accent }}
+                    className={cn(
+                      "card-face card-face-front flex flex-col items-center justify-center rounded-2xl border-[1.5px] shadow-[2px_2px_0_var(--color-ink)]",
+                      card.matched && "anim-pop ring-2 ring-mustard/80",
+                    )}
+                  >
+                    <span className="text-[24px] leading-none">{card.def.symbol}</span>
+                    <span className="mt-1 text-[10px] font-extrabold text-ink/85">{card.def.label}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {won && (
+          <div className="anim-pop mx-4 mb-4 flex items-center justify-between gap-2 rounded-2xl border-[1.5px] border-ink bg-white/85 px-3.5 py-2.5 sm:mx-5 sm:mb-5">
+            <div>
+              <p className="font-display text-[15px] font-semibold">Cleared in {moves} moves!</p>
+              <p className="text-[11.5px] font-semibold text-ink-soft">+6 Energy · +2 Rooftop Tokens</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => startNew(pairCount)}
+              className="press rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
+            >
+              Play Again
+            </button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -874,7 +863,9 @@ export function RhythmTapPanel({
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
   const [judge, setJudge] = useState<{ text: string; key: number } | null>(null);
-  const [flashLane, setFlashLane] = useState<number | null>(null);
+  const [pressedLanes, setPressedLanes] = useState<[boolean, boolean, boolean]>([false, false, false]);
+  const [laneFx, setLaneFx] = useState<{ lane: 0 | 1 | 2; kind: "perfect" | "good" | "miss"; key: number } | null>(null);
+  const fxTimerRef = useRef<number | null>(null);
 
   const stateRef = useRef<{
     notes: RhythmNote[];
@@ -886,6 +877,21 @@ export function RhythmTapPanel({
   }>({ notes: [], startTs: 0, score: 0, combo: 0, maxCombo: 0, finished: false });
 
   const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    return () => {
+      if (fxTimerRef.current !== null) window.clearTimeout(fxTimerRef.current);
+    };
+  }, []);
+
+  const setLanePressed = useCallback((lane: 0 | 1 | 2, down: boolean) => {
+    setPressedLanes((cur) => {
+      if (cur[lane] === down) return cur;
+      const next: [boolean, boolean, boolean] = [...cur] as [boolean, boolean, boolean];
+      next[lane] = down;
+      return next;
+    });
+  }, []);
 
   const startRound = () => {
     sound.click();
@@ -904,6 +910,8 @@ export function RhythmTapPanel({
     setCombo(0);
     setMaxCombo(0);
     setJudge(null);
+    setLaneFx(null);
+    setPressedLanes([false, false, false]);
     setPhase("playing");
   };
 
@@ -949,8 +957,6 @@ export function RhythmTapPanel({
   const tapLane = useCallback(
     (lane: 0 | 1 | 2) => {
       if (phase !== "playing") return;
-      setFlashLane(lane);
-      window.setTimeout(() => setFlashLane((cur) => (cur === lane ? null : cur)), 110);
 
       const s = stateRef.current;
       const elapsed = performance.now() - s.startTs;
@@ -966,6 +972,8 @@ export function RhythmTapPanel({
         }
       }
 
+      if (fxTimerRef.current !== null) window.clearTimeout(fxTimerRef.current);
+
       if (bestIdx >= 0) {
         s.notes[bestIdx].status = "hit";
         sound.rhythmNote(lane);
@@ -977,28 +985,59 @@ export function RhythmTapPanel({
         setCombo(s.combo);
         setMaxCombo(s.maxCombo);
         setNotes([...s.notes]);
-        setJudge({ text: perfect ? "Perfect!" : "Good", key: elapsed });
-      } else if (s.combo > 0) {
-        s.combo = 0;
-        setCombo(0);
-        setJudge({ text: "Early / Miss", key: elapsed });
+        setJudge({ text: perfect ? "Perfect!" : "Good!", key: elapsed });
+        setLaneFx({ lane, kind: perfect ? "perfect" : "good", key: elapsed });
+      } else {
+        sound.click();
+        if (s.combo > 0) {
+          s.combo = 0;
+          setCombo(0);
+        }
+        setJudge({ text: "Miss", key: elapsed });
+        setLaneFx({ lane, kind: "miss", key: elapsed });
       }
+
+      fxTimerRef.current = window.setTimeout(() => {
+        setLaneFx(null);
+        fxTimerRef.current = null;
+      }, 260);
     },
     [phase],
   );
 
   useEffect(() => {
-    if (phase !== "playing") return;
+    if (phase !== "playing") {
+      setPressedLanes([false, false, false]);
+      return;
+    }
+    const laneForKey = (k: string): 0 | 1 | 2 | null => {
+      if (k === "a" || k === "j") return 0;
+      if (k === "s" || k === "k") return 1;
+      if (k === "d" || k === "l") return 2;
+      return null;
+    };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-      const k = e.key.toLowerCase();
-      if (k === "a" || k === "j") tapLane(0);
-      else if (k === "s" || k === "k") tapLane(1);
-      else if (k === "d" || k === "l") tapLane(2);
+      const lane = laneForKey(e.key.toLowerCase());
+      if (lane !== null) {
+        setLanePressed(lane, true);
+        tapLane(lane);
+      }
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const lane = laneForKey(e.key.toLowerCase());
+      if (lane !== null) setLanePressed(lane, false);
+    };
+    const onBlur = () => setPressedLanes([false, false, false]);
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [phase, tapLane]);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [phase, tapLane, setLanePressed]);
 
   const secsLeft = Math.max(0, Math.ceil((SONG_DURATION_MS - elapsedMs) / 1000));
 
@@ -1006,7 +1045,7 @@ export function RhythmTapPanel({
     <aside
       role="dialog"
       aria-label="Lo-Fi Rhythm Tap"
-      className="paper anim-slide pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] sm:w-[390px]"
+      className="paper anim-rise pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] sm:w-[440px]"
     >
       <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
         <div>
@@ -1025,110 +1064,172 @@ export function RhythmTapPanel({
         </button>
       </header>
 
-      <div className="px-4 pt-3 sm:px-5">
-        <div className="relative h-[300px] overflow-hidden rounded-[20px] border-[1.5px] border-ink bg-[#211a30] text-[#f7eedc]">
-          {/* Status bar */}
-          <div className="flex items-center justify-between px-3 py-2 text-[11.5px] font-extrabold">
-            <span>{phase === "playing" ? `${secsLeft}s left` : "30s Lo-Fi Set"}</span>
-            <span className="text-mustard">{combo > 1 ? `${combo}× Combo` : judge?.text ?? "Chill pace"}</span>
-          </div>
+      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto">
+        <div className="px-4 pt-3 sm:px-5">
+          <div className="relative h-[306px] overflow-hidden rounded-[20px] border-[1.5px] border-ink bg-[#211a30] text-[#f7eedc]">
+            {/* Status bar */}
+            <div className="flex items-center justify-between px-3 py-2 text-[11.5px] font-extrabold">
+              <span>{phase === "playing" ? `${secsLeft}s left` : "30s Lo-Fi Set"}</span>
+              <span className="text-mustard">{combo > 1 ? `${combo}× Combo` : judge?.text ?? "Chill pace"}</span>
+            </div>
 
-          {/* 3-lane track */}
-          <div className="relative h-[222px] grid grid-cols-3 border-t border-white/10">
-            {[0, 1, 2].map((lane) => (
+            {/* 3-lane track */}
+            <div className="relative grid h-[222px] grid-cols-3 border-t border-white/10">
+              {([0, 1, 2] as const).map((lane) => (
+                <div
+                  key={lane}
+                  className={cn(
+                    "relative border-r border-white/10 last:border-r-0 transition-colors duration-75",
+                    pressedLanes[lane] && "bg-white/15",
+                  )}
+                />
+              ))}
+
+              {/* Target hit line */}
               <div
-                key={lane}
-                className={cn(
-                  "relative border-r border-white/10 last:border-r-0 transition-colors",
-                  flashLane === lane && "bg-white/10",
-                )}
+                className="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-mustard/75"
+                style={{ top: `${HIT_LINE_PCT}%` }}
               />
-            ))}
 
-            {/* Target hit line */}
-            <div
-              className="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-mustard/80"
-              style={{ top: `${HIT_LINE_PCT}%` }}
-            />
-
-            {/* Falling notes */}
-            {phase === "playing" &&
-              notes.map((n) => {
-                if (n.status !== "pending") return null;
-                const progress = 1 - (n.hitAtMs - elapsedMs) / TRAVEL_MS;
-                if (progress < -0.05 || progress > 1.15) return null;
-                const yPct = progress * HIT_LINE_PCT;
-                const leftPct = n.lane * 33.333 + 16.666;
+              {/* 3 target receptor rings + lane hit burst feedback */}
+              {([0, 1, 2] as const).map((lane) => {
+                const pressed = pressedLanes[lane];
+                const fx = laneFx?.lane === lane ? laneFx : null;
+                const leftPct = lane * 33.333 + 16.666;
                 return (
                   <div
-                    key={n.id}
-                    className="pointer-events-none absolute h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#f7eedc] shadow-md"
-                    style={{
-                      left: `${leftPct}%`,
-                      top: `${yPct}%`,
-                      backgroundColor: LANE_COLORS[n.lane],
-                    }}
-                  />
+                    key={`rec-${lane}`}
+                    className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+                    style={{ left: `${leftPct}%`, top: `${HIT_LINE_PCT}%` }}
+                  >
+                    {fx && fx.kind !== "miss" && (
+                      <div
+                        key={fx.key}
+                        className="anim-pop absolute -inset-3 rounded-full border-2"
+                        style={{ borderColor: LANE_COLORS[lane], opacity: 0.9 }}
+                      />
+                    )}
+                    <div
+                      className={cn(
+                        "h-8 w-8 rounded-full border-2 transition-transform duration-75",
+                        pressed ? "scale-110" : "scale-100",
+                      )}
+                      style={{
+                        borderColor: pressed || fx ? LANE_COLORS[lane] : "rgba(247, 238, 220, 0.35)",
+                        backgroundColor: pressed ? `${LANE_COLORS[lane]}44` : "transparent",
+                      }}
+                    />
+                    {fx && (
+                      <span
+                        key={`txt-${fx.key}`}
+                        className={cn(
+                          "anim-pop absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-extrabold shadow",
+                          fx.kind === "perfect"
+                            ? "bg-mustard text-ink"
+                            : fx.kind === "good"
+                              ? "bg-sage text-paper"
+                              : "bg-night/90 text-[#f7eedc]/75",
+                        )}
+                      >
+                        {fx.kind === "perfect" ? "Perfect!" : fx.kind === "good" ? "Good!" : "Miss"}
+                      </span>
+                    )}
+                  </div>
                 );
               })}
 
-            {phase === "ready" && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#211a30]/85 px-6 text-center">
-                <p className="font-display text-[19px] font-semibold">Tap falling lanterns</p>
-                <p className="mt-1 text-[12px] text-[#f7eedc]/75">Use keys A / S / D (or J / K / L) or click the pads below.</p>
-                <button
-                  type="button"
-                  onClick={startRound}
-                  className="press mt-4 rounded-xl border-[1.5px] border-ink bg-mustard px-4 py-2 text-[13px] font-extrabold text-ink"
-                >
-                  Start 30s Chill Beat
-                </button>
-              </div>
-            )}
+              {/* Falling notes */}
+              {phase === "playing" &&
+                notes.map((n) => {
+                  if (n.status !== "pending") return null;
+                  const progress = 1 - (n.hitAtMs - elapsedMs) / TRAVEL_MS;
+                  if (progress < -0.05 || progress > 1.15) return null;
+                  const yPct = progress * HIT_LINE_PCT;
+                  const leftPct = n.lane * 33.333 + 16.666;
+                  return (
+                    <div
+                      key={n.id}
+                      className="pointer-events-none absolute h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#f7eedc] shadow-md"
+                      style={{
+                        left: `${leftPct}%`,
+                        top: `${yPct}%`,
+                        backgroundColor: LANE_COLORS[n.lane],
+                      }}
+                    />
+                  );
+                })}
 
-            {phase === "done" && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#211a30]/90 px-6 text-center">
-                <p className="font-display text-[21px] font-semibold text-mustard">Nice Groove!</p>
-                <p className="mt-1 text-[13px] font-bold">
-                  Score {score} · Max Combo {maxCombo}
-                </p>
-                <p className="mt-1 text-[12px] text-[#f7eedc]/80">
-                  +8 Energy · +{score >= 250 ? 3 : 2} Rooftop Tokens
-                </p>
-                <button
-                  type="button"
-                  onClick={startRound}
-                  className="press mt-4 rounded-xl border-[1.5px] border-ink bg-tomato px-4 py-2 text-[13px] font-extrabold text-paper"
-                >
-                  Play Again
-                </button>
-              </div>
-            )}
-          </div>
+              {phase === "ready" && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#211a30]/85 px-6 text-center">
+                  <p className="font-display text-[19px] font-semibold">Tap falling lanterns</p>
+                  <p className="mt-1 text-[12px] text-[#f7eedc]/75">Use keys A / S / D (or J / K / L) or click the pads below.</p>
+                  <button
+                    type="button"
+                    onClick={startRound}
+                    className="press mt-4 rounded-xl border-[1.5px] border-ink bg-mustard px-4 py-2 text-[13px] font-extrabold text-ink"
+                  >
+                    Start 30s Chill Beat
+                  </button>
+                </div>
+              )}
 
-          {/* Clickable hit pads */}
-          <div className="grid h-[42px] grid-cols-3 border-t border-white/15 bg-black/25">
-            {([0, 1, 2] as const).map((lane) => (
-              <button
-                key={lane}
-                type="button"
-                onPointerDown={() => tapLane(lane)}
-                className={cn(
-                  "flex items-center justify-center border-r border-white/10 text-[12px] font-extrabold tracking-wide last:border-r-0 active:bg-white/20",
-                  flashLane === lane && "bg-white/20",
-                )}
-              >
-                <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: LANE_COLORS[lane] }} />
-                {LANE_KEYS[lane]}
-              </button>
-            ))}
+              {phase === "done" && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#211a30]/90 px-6 text-center">
+                  <p className="font-display text-[21px] font-semibold text-mustard">Nice Groove!</p>
+                  <p className="mt-1 text-[13px] font-bold">
+                    Score {score} · Max Combo {maxCombo}
+                  </p>
+                  <p className="mt-1 text-[12px] text-[#f7eedc]/80">
+                    +8 Energy · +{score >= 250 ? 3 : 2} Rooftop Tokens
+                  </p>
+                  <button
+                    type="button"
+                    onClick={startRound}
+                    className="press mt-4 rounded-xl border-[1.5px] border-ink bg-tomato px-4 py-2 text-[13px] font-extrabold text-paper"
+                  >
+                    Play Again
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Interactive hit pads */}
+            <div className="grid h-[48px] grid-cols-3 gap-1 border-t border-white/15 bg-black/30 p-1">
+              {([0, 1, 2] as const).map((lane) => {
+                const down = pressedLanes[lane];
+                return (
+                  <button
+                    key={lane}
+                    type="button"
+                    onPointerDown={() => {
+                      setLanePressed(lane, true);
+                      tapLane(lane);
+                    }}
+                    onPointerUp={() => setLanePressed(lane, false)}
+                    onPointerLeave={() => setLanePressed(lane, false)}
+                    onPointerCancel={() => setLanePressed(lane, false)}
+                    style={down ? { backgroundColor: LANE_COLORS[lane], color: "#231a2b" } : undefined}
+                    className={cn(
+                      "flex items-center justify-center rounded-lg border border-white/15 text-[12px] font-extrabold tracking-wide transition-transform duration-75",
+                      down ? "scale-[0.95]" : "bg-white/5 hover:bg-white/10",
+                    )}
+                  >
+                    <span
+                      className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full border border-black/30"
+                      style={{ backgroundColor: down ? "#231a2b" : LANE_COLORS[lane] }}
+                    />
+                    {LANE_KEYS[lane]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
 
-      <p className="px-4 py-3 text-[11.5px] font-semibold text-ink-soft sm:px-5">
-        Tip: Score 250+ for a bonus token (+3 total)!
-      </p>
+        <p className="px-4 py-3 text-[11.5px] font-semibold text-ink-soft sm:px-5">
+          Tip: Score 250+ for a bonus token (+3 total)!
+        </p>
+      </div>
     </aside>
   );
 }
@@ -1141,14 +1242,19 @@ export function CapsuleMachinePanel({
   rooftop,
   stars,
   onPull,
+  onToggleDesk,
+  onToggleCompanion,
   onClose,
 }: {
   rooftop: RooftopSave;
   stars: number;
   onPull: (payWithStar: boolean) => { trinket: TrinketDef; isNew: boolean } | null;
+  onToggleDesk: (id: string) => void;
+  onToggleCompanion: (id: string) => void;
   onClose: () => void;
 }) {
   const [cranking, setCranking] = useState(false);
+  const [revealKey, setRevealKey] = useState(0);
   const [result, setResult] = useState<{ trinket: TrinketDef; isNew: boolean } | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
   const pullTimerRef = useRef<number | null>(null);
@@ -1173,6 +1279,7 @@ export function CapsuleMachinePanel({
       setCranking(false);
       setResult(outcome);
       setInspectId(outcome.trinket.id);
+      setRevealKey((k) => k + 1);
       sound.sparkle();
       pullTimerRef.current = null;
     }, 520);
@@ -1182,6 +1289,7 @@ export function CapsuleMachinePanel({
     () => TRINKETS.find((t) => t.id === (inspectId ?? result?.trinket.id ?? null)) ?? null,
     [inspectId, result],
   );
+  const ownedInspected = inspected ? rooftop.trinkets.includes(inspected.id) : false;
 
   return (
     <aside
@@ -1209,18 +1317,23 @@ export function CapsuleMachinePanel({
       {/* Pull & Reveal stage */}
       <div className="px-4 pt-3 sm:px-5">
         <div
-          className="relative flex min-h-[142px] items-center gap-4 rounded-[20px] border-[1.5px] border-ink p-3.5"
+          className="relative flex min-h-[154px] items-center gap-3.5 rounded-[20px] border-[1.5px] border-ink p-3.5 transition-colors"
           style={{ backgroundColor: inspected && !cranking ? inspected.bg : "#f0e6d2" }}
         >
           {cranking ? (
             <div className="flex w-full flex-col items-center justify-center py-3">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-ink border-t-tomato" />
-              <p className="mt-2 font-display text-[15px] font-semibold">Clunk… rolling a capsule!</p>
+              <div className="relative flex h-12 w-12 items-center justify-center">
+                <div className="h-11 w-11 animate-bounce rounded-full border-2 border-ink bg-gradient-to-b from-tomato from-50% to-paper to-50% shadow" />
+              </div>
+              <p className="mt-2 font-display text-[15px] font-semibold">Cranking… capsule dropping!</p>
             </div>
           ) : inspected ? (
             <>
-              <div className="grid h-[94px] w-[94px] shrink-0 place-items-center rounded-2xl border-[1.5px] border-ink bg-white/85">
-                <TrinketFigure id={inspected.id} size={82} />
+              <div
+                key={`fig-${revealKey}-${inspected.id}`}
+                className="anim-pop grid h-[92px] w-[92px] shrink-0 place-items-center rounded-2xl border-[1.5px] border-ink bg-white/85"
+              >
+                <TrinketFigure id={inspected.id} size={80} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -1230,7 +1343,7 @@ export function CapsuleMachinePanel({
                   {result?.trinket.id === inspected.id && (
                     <span
                       className={cn(
-                        "rounded-full border border-ink px-2 py-0.5 text-[10px] font-extrabold",
+                        "anim-pop rounded-full border border-ink px-2 py-0.5 text-[10px] font-extrabold",
                         result.isNew ? "bg-tomato text-paper" : "bg-mustard text-ink",
                       )}
                     >
@@ -1238,18 +1351,49 @@ export function CapsuleMachinePanel({
                     </span>
                   )}
                 </div>
-                <p className="mt-1.5 font-display text-[18px] font-semibold leading-tight">
-                  {inspected.name}
-                </p>
-                <p className="text-[12px] font-extrabold text-ink-soft">{inspected.zhName}</p>
-                <p className="mt-1 text-[11.5px] leading-snug text-ink/85">{inspected.flavor}</p>
+                <p className="mt-1 font-display text-[17.5px] font-semibold leading-tight">{inspected.name}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-ink/85">{inspected.flavor}</p>
+                {ownedInspected && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.click();
+                        onToggleDesk(inspected.id);
+                      }}
+                      className={cn(
+                        "rounded-lg border border-ink px-2 py-0.5 text-[10.5px] font-extrabold transition-colors",
+                        rooftop.deskTrinket === inspected.id
+                          ? "bg-sage text-paper"
+                          : "bg-white/85 text-ink hover:bg-mustard/50",
+                      )}
+                    >
+                      {rooftop.deskTrinket === inspected.id ? "On Desk ✓" : "Place on Desk"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.click();
+                        onToggleCompanion(inspected.id);
+                      }}
+                      className={cn(
+                        "rounded-lg border border-ink px-2 py-0.5 text-[10.5px] font-extrabold transition-colors",
+                        rooftop.companionTrinket === inspected.id
+                          ? "bg-tomato text-paper"
+                          : "bg-white/85 text-ink hover:bg-mustard/50",
+                      )}
+                    >
+                      {rooftop.companionTrinket === inspected.id ? "Following ✓" : "Follow Me"}
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           ) : (
             <div className="flex w-full flex-col items-center justify-center py-4 text-center">
               <p className="font-display text-[16.5px] font-semibold">Turn the brass crank</p>
               <p className="mt-1 text-[12px] text-ink-soft">
-                Collect 4 chibi dolls &amp; 8 cozy pocket critters. Play rooftop minigames to earn Tokens!
+                Pull cute 2D acrylic standees to display on your bookshelf, study desk, or beside you!
               </p>
             </div>
           )}
@@ -1315,7 +1459,158 @@ export function CapsuleMachinePanel({
                 {owned ? (
                   <>
                     <TrinketFigure id={t.id} size={46} />
-                    <span className="mt-0.5 line-clamp-1 text-[10px] font-extrabold text-ink">{t.zhName}</span>
+                    <span className="mt-0.5 line-clamp-1 text-[10px] font-extrabold text-ink">{t.name}</span>
+                  </>
+                ) : (
+                  <div className="flex h-[62px] flex-col items-center justify-center text-ink/35">
+                    <span className="font-display text-[18px] font-semibold">?</span>
+                    <span className="text-[9px] font-bold">Locked</span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. Standalone Collection Shelf (Accessible from Anywhere)           */
+/* ------------------------------------------------------------------ */
+
+export function CollectionPanel({
+  rooftop,
+  onToggleDesk,
+  onToggleCompanion,
+  onClose,
+}: {
+  rooftop: RooftopSave;
+  onToggleDesk: (id: string) => void;
+  onToggleCompanion: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [inspectId, setInspectId] = useState<string | null>(() => rooftop.deskTrinket ?? rooftop.companionTrinket ?? rooftop.trinkets[0] ?? null);
+  const inspected = useMemo(() => TRINKETS.find((t) => t.id === inspectId) ?? null, [inspectId]);
+  const ownedSelected = inspected ? rooftop.trinkets.includes(inspected.id) : false;
+
+  return (
+    <aside
+      role="dialog"
+      aria-label="Standee Collection"
+      className="paper anim-rise pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] sm:w-[440px]"
+    >
+      <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
+        <div>
+          <h2 className="font-display text-[25px] font-semibold italic leading-none">Standee Collection</h2>
+          <p className="mt-1.5 text-[12px] font-semibold text-ink-soft">
+            {rooftop.trinkets.length}/{TRINKETS.length} collected · {rooftop.tokens} Tokens
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-label="Close collection"
+          onClick={onClose}
+          className="-mr-1 -mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
+        >
+          <Icon name="x" />
+        </button>
+      </header>
+
+      <div className="px-4 pt-3 sm:px-5">
+        <div
+          className="flex min-h-[126px] items-center gap-3.5 rounded-[20px] border-[1.5px] border-ink p-3.5"
+          style={{ backgroundColor: inspected && ownedSelected ? inspected.bg : "#f0e6d2" }}
+        >
+          {inspected && ownedSelected ? (
+            <>
+              <div className="grid h-[86px] w-[86px] shrink-0 place-items-center rounded-2xl border-[1.5px] border-ink bg-white/85">
+                <TrinketFigure id={inspected.id} size={74} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-display text-[17.5px] font-semibold leading-tight">{inspected.name}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-ink/85">{inspected.flavor}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.click();
+                      onToggleDesk(inspected.id);
+                    }}
+                    className={cn(
+                      "rounded-lg border border-ink px-2.5 py-1 text-[11px] font-extrabold transition-colors",
+                      rooftop.deskTrinket === inspected.id
+                        ? "bg-sage text-paper"
+                        : "bg-white/85 text-ink hover:bg-mustard/50",
+                    )}
+                  >
+                    {rooftop.deskTrinket === inspected.id ? "On Desk ✓" : "Place on Desk"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.click();
+                      onToggleCompanion(inspected.id);
+                    }}
+                    className={cn(
+                      "rounded-lg border border-ink px-2.5 py-1 text-[11px] font-extrabold transition-colors",
+                      rooftop.companionTrinket === inspected.id
+                        ? "bg-tomato text-paper"
+                        : "bg-white/85 text-ink hover:bg-mustard/50",
+                    )}
+                  >
+                    {rooftop.companionTrinket === inspected.id ? "Following ✓" : "Follow Me"}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="w-full py-3 text-center">
+              <p className="font-display text-[16px] font-semibold">No standee selected yet</p>
+              <p className="mt-1 text-[12px] text-ink-soft">
+                Climb the study loft ladder to the rooftop Capsule Machine to pull acrylic standees!
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="scroll-soft mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-5 sm:pb-5">
+        <div className="grid grid-cols-4 gap-2">
+          {TRINKETS.map((t) => {
+            const owned = rooftop.trinkets.includes(t.id);
+            const selected = inspected?.id === t.id;
+            const onDesk = rooftop.deskTrinket === t.id;
+            const following = rooftop.companionTrinket === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                disabled={!owned}
+                onClick={() => {
+                  sound.click();
+                  setInspectId(t.id);
+                }}
+                style={owned ? { backgroundColor: t.bg } : undefined}
+                className={cn(
+                  "relative flex flex-col items-center justify-center rounded-xl border-[1.5px] p-1.5 text-center transition-transform",
+                  owned
+                    ? selected
+                      ? "border-ink ring-2 ring-tomato/70"
+                      : "border-ink hover:-translate-y-0.5"
+                    : "cursor-default border-dashed border-ink/35 bg-white/40",
+                )}
+              >
+                {(onDesk || following) && (
+                  <span className="absolute right-1 top-1 rounded-full border border-ink bg-mustard px-1 text-[8px] font-extrabold leading-tight">
+                    {following ? "Follow" : "Desk"}
+                  </span>
+                )}
+                {owned ? (
+                  <>
+                    <TrinketFigure id={t.id} size={46} />
+                    <span className="mt-0.5 line-clamp-1 text-[10px] font-extrabold text-ink">{t.name}</span>
                   </>
                 ) : (
                   <div className="flex h-[62px] flex-col items-center justify-center text-ink/35">

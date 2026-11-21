@@ -55,7 +55,8 @@ type IconName =
   | "repeat"
   | "upload"
   | "music"
-  | "radio";
+  | "radio"
+  | "gift";
 
 const PATHS: Record<IconName, ReactNode> = {
   book: (
@@ -174,6 +175,15 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="m7 8 10-5" />
       <circle cx="8.5" cy="14" r="2.2" />
       <path d="M14 12.5h4M14 15.5h4" />
+    </>
+  ),
+  gift: (
+    <>
+      <rect x="3.5" y="8.5" width="17" height="4" rx="1" />
+      <path d="M5 12.5v7.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7.5" />
+      <path d="M12 8.5V21" />
+      <path d="M12 8.5H8.8a2.2 2.2 0 1 1 0-4.4C11 4.1 12 8.5 12 8.5Z" />
+      <path d="M12 8.5h3.2a2.2 2.2 0 1 0 0-4.4C13 4.1 12 8.5 12 8.5Z" />
     </>
   ),
 };

@@ -110,8 +110,8 @@ const SCRATCH_ANCHOR = (() => {
   const dz = SCRATCH_APPROACH.z - SCRATCH_POST.z;
   const len = Math.hypot(dx, dz) || 1;
   return {
-    x: SCRATCH_POST.x + (dx / len) * 0.27,
-    z: SCRATCH_POST.z + (dz / len) * 0.27,
+    x: SCRATCH_POST.x + (dx / len) * 0.22,
+    z: SCRATCH_POST.z + (dz / len) * 0.22,
   };
 })();
 
@@ -1484,9 +1484,9 @@ export class CatController {
         tBodyRoll = swipe * 0.07;
         tBlX = 0.78;
         tBrX = 0.78;
-        tFlX = -1.08 - Math.max(0, swipe) * 0.42;
-        tFrX = -1.08 - Math.max(0, -swipe) * 0.42;
-        tHeadPitch = 0.12;
+        tFlX = -1.15 - Math.max(0, swipe) * 0.38;
+        tFrX = -1.15 - Math.max(0, -swipe) * 0.38;
+        tHeadPitch = 0.18;
         tp0 = 0.55;
         tp1 = 0.25;
         ty0 = Math.sin(t * 3.5) * 0.18;
