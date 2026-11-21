@@ -562,11 +562,13 @@ export function TimerPanel({
 export function Journal({
   found,
   stars,
+  catName,
   onClose,
   onReset,
 }: {
   found: DiscoveryId[];
   stars: number;
+  catName: string;
   onClose: () => void;
   onReset: () => void;
 }) {
@@ -617,7 +619,7 @@ export function Journal({
               </span>
               <div className="min-w-0">
                 <p className={cn("font-display text-[16.5px] font-semibold leading-tight", !has && "text-ink/60")}>
-                  {has ? d.name : d.secret ? "A secret" : "Not found yet"}
+                  {has ? (d.id === "cat" ? catName.trim() || "Miso" : d.name) : d.secret ? "A secret" : "Not found yet"}
                 </p>
                 <p className={cn("mt-0.5 text-[12.5px] leading-snug", has ? "text-ink-soft" : "italic text-ink/70")}>
                   {has ? d.note : d.clue}
@@ -705,7 +707,7 @@ export function Toasts({ items }: { items: Toast[] }) {
 /* Small pieces                                                        */
 /* ------------------------------------------------------------------ */
 
-export function ControlsHint({ touch, locked }: { touch: boolean; locked?: boolean }) {
+export function ControlsHint({ touch, locked, catName }: { touch: boolean; locked?: boolean; catName: string }) {
   const [open, setOpen] = useState(true);
   if (!open) {
     return (
@@ -758,7 +760,8 @@ export function ControlsHint({ touch, locked }: { touch: boolean; locked?: boole
   ];
   const interactRows: [string, string][] = [
     ["Click / E", "Interact"],
-    ["F", "Call Miso"],
+    ["F", `Call ${catName.trim() || "Miso"}`],
+    ["K", "Customize model"],
     ["L", "To-do list"],
     ["P", "Start / pause timer"],
     ["T", "Timer panel"],
@@ -1060,11 +1063,19 @@ function SwatchRow({
 
 export function AvatarPanel({
   config,
+  catName,
+  firstTime,
   onChange,
+  onCatNameChange,
+  onDone,
   onClose,
 }: {
   config: AvatarConfig;
+  catName: string;
+  firstTime?: boolean;
   onChange: (next: AvatarConfig) => void;
+  onCatNameChange: (name: string) => void;
+  onDone?: () => void;
   onClose: () => void;
 }) {
   return (
@@ -1075,8 +1086,12 @@ export function AvatarPanel({
     >
       <header className="flex items-start justify-between gap-2 px-4 pt-4">
         <div>
-          <h2 className="font-display text-[22px] font-semibold italic leading-none">Your 3rd-person model</h2>
-          <p className="mt-1.5 text-[11.5px] font-semibold text-ink-soft">Drag room to rotate · Scroll to zoom</p>
+          <h2 className="font-display text-[22px] font-semibold italic leading-none">
+            {firstTime ? "Welcome to Cozy Study" : "Your 3rd-person model"}
+          </h2>
+          <p className="mt-1.5 text-[11.5px] font-semibold text-ink-soft">
+            {firstTime ? "Customize your character & name your cat" : "Drag room to rotate · Scroll to zoom"}
+          </p>
         </div>
         <button
           type="button"
@@ -1150,7 +1165,37 @@ export function AvatarPanel({
             />
           )}
         </div>
+
+        <div className="mt-3 flex items-center justify-between gap-2 border-t-[1.5px] border-dashed border-ink/25 pt-3">
+          <label htmlFor="cat-name-input" className="w-[66px] shrink-0 text-[11px] font-extrabold text-ink-soft">
+            Cat's name
+          </label>
+          <input
+            id="cat-name-input"
+            type="text"
+            value={catName}
+            maxLength={20}
+            onChange={(e) => onCatNameChange(e.target.value)}
+            onBlur={() => {
+              if (!catName.trim()) onCatNameChange("Miso");
+            }}
+            placeholder="Miso"
+            className="min-w-0 flex-1 rounded-xl border-[1.5px] border-ink bg-white/80 px-2.5 py-1 text-[12.5px] font-bold placeholder:text-ink-soft/60"
+          />
+        </div>
       </div>
+
+      {firstTime && (
+        <footer className="border-t-[1.5px] border-ink px-4 py-3">
+          <button
+            type="button"
+            onClick={onDone ?? onClose}
+            className="press flex h-10 w-full items-center justify-center rounded-full border-[1.5px] border-ink bg-tomato text-[13.5px] font-extrabold text-paper shadow-[2px_2px_0_var(--color-ink)]"
+          >
+            Start studying
+          </button>
+        </footer>
+      )}
     </aside>
   );
 }

@@ -443,6 +443,8 @@ export class StudyScene {
   private exercisePaused = false;
   private exPhase = 0;
   private thirdPerson = false;
+  private avatarPreview = false;
+  private catName = "Miso";
   private avatarYaw = SPAWN_YAW;
   private moveSpeed = 0;
   private walkPhase = 0;
@@ -1156,12 +1158,42 @@ export class StudyScene {
     }
   }
 
+  setCatName(name: string) {
+    this.catName = name.trim().slice(0, 20) || "Miso";
+    this.catCtrl.setName(this.catName);
+    this.hoverDirty = true;
+  }
+
+  setAvatarPreview(on: boolean) {
+    if (on === this.avatarPreview) return;
+    this.avatarPreview = on;
+    if (this.activity !== "none" || this.resting) return;
+    if (on) {
+      this.unlockPointer();
+      this.keys.clear();
+      this.crouched = false;
+      this.refs.avatar.root.visible = true;
+      this.refs.avatar.root.position.copy(this.playerPos);
+      this.refs.avatar.root.rotation.y = this.avatarYaw;
+      this.tpTarget.set(this.playerPos.x, this.playerPos.y + 0.96, this.playerPos.z);
+      this.tpYaw = this.avatarYaw + Math.PI + 0.28;
+      this.tpPitch = 0.16;
+      this.tpDist = 2.05;
+      const tpPos = this.tpCameraPos();
+      const o = this.tpOrientation(tpPos);
+      this.glideCameraTo(tpPos, o.yaw, o.pitch, 0.55);
+    } else {
+      this.refs.avatar.root.visible = this.thirdPerson;
+      this.applyCameraPose(0);
+    }
+  }
+
   setAvatarConfig(cfg: AvatarConfig) {
     const old = this.refs.avatar;
     const next = buildAvatar(cfg);
     next.root.position.copy(old.root.position);
     next.root.rotation.copy(old.root.rotation);
-    next.root.visible = !this.resting && this.thirdPerson;
+    next.root.visible = !this.resting && (this.thirdPerson || this.avatarPreview);
     this.room.remove(old.root);
     this.room.add(next.root);
     this.refs.avatar = next;
@@ -1551,6 +1583,12 @@ export class StudyScene {
       return;
     }
 
+    if (this.avatarPreview) {
+      this.camera.position.copy(this.tpCameraPos(this.tmpV));
+      this.camera.lookAt(this.tpTarget);
+      return;
+    }
+
     // Movement vector in XZ from yaw
     let moveX = 0;
     let moveZ = 0;
@@ -1806,19 +1844,20 @@ export class StudyScene {
     if (this.locked) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
-    if (e.pointerType === "mouse" && e.button === 0 && !this.resting && this.activity === "none" && !this.uiOpen) {
+    if (e.pointerType === "mouse" && e.button === 0 && !this.resting && this.activity === "none" && !this.uiOpen && !this.avatarPreview) {
       this.lockPointer();
       return;
     }
     if (e.pointerType === "mouse") this.activePointers.clear();
     this.activePointers.add(e.pointerId);
     if (this.activePointers.size === 1) {
+      const orbiting = (this.activity !== "none" && this.thirdPerson) || (this.activity === "none" && this.avatarPreview);
       this.down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
       this.dragStart = {
         x: e.clientX,
         y: e.clientY,
-        yaw: this.activity !== "none" && this.thirdPerson ? this.tpYaw : this.yaw,
-        pitch: this.activity !== "none" && this.thirdPerson ? this.tpPitch : this.pitch,
+        yaw: orbiting ? this.tpYaw : this.yaw,
+        pitch: orbiting ? this.tpPitch : this.pitch,
       };
       this.dragging = false;
       try {
@@ -1847,7 +1886,8 @@ export class StudyScene {
         this.renderer.domElement.style.cursor = "grabbing";
       }
       if (this.dragging) {
-        if (this.activity !== "none" && this.thirdPerson) {
+        const orbiting = (this.activity !== "none" && this.thirdPerson) || (this.activity === "none" && this.avatarPreview);
+        if (orbiting) {
           const sens = this.mobile ? 0.006 : 0.0048;
           this.tpYaw = this.dragStart.yaw - dx * sens;
           this.tpPitch = Math.max(0.06, Math.min(0.95, this.dragStart.pitch + dy * sens));
@@ -1892,13 +1932,14 @@ export class StudyScene {
     const item = this.pick(e.clientX, e.clientY);
     if (item) {
       this.interact(item);
-    } else if (e.pointerType === "mouse" && !this.resting && this.activity === "none" && !this.uiOpen) {
+    } else if (e.pointerType === "mouse" && !this.resting && this.activity === "none" && !this.uiOpen && !this.avatarPreview) {
       this.lockPointer();
     }
   };
 
   private onWheel = (e: WheelEvent) => {
-    if (this.activity === "none" || !this.thirdPerson) return;
+    const orbiting = (this.activity !== "none" && this.thirdPerson) || (this.activity === "none" && this.avatarPreview);
+    if (!orbiting) return;
     e.preventDefault();
     this.tpDist = Math.max(1.35, Math.min(3.6, this.tpDist + e.deltaY * 0.0022));
   };
@@ -1995,6 +2036,7 @@ export class StudyScene {
     if (it.id === "pouf") return this.activity === "pouf" ? "Relaxing…" : "Sit on the pouf";
     if (it.id === "poufBook") return this.activity === "pouf" && this.poufReading ? "Flip a page" : "Read on the pouf";
     if (it.id === "laser") return this.laserTimer > 0 ? "Turn off laser" : "Laser pointer";
+    if (it.id === "catBox") return `${this.catName}'s cardboard box`;
     if (it.id === "radio") {
       return this.radioLabel ? `Radio · ${this.radioLabel.length > 26 ? this.radioLabel.slice(0, 25) + "…" : this.radioLabel}` : "Radio";
     }

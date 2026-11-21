@@ -124,10 +124,11 @@ export default function App() {
       saveRef.current = { ...cur, found };
       setSave((s) => (s.found.includes(id) ? s : { ...s, found: [...s.found, id] }));
       const d = DISCOVERY_BY_ID[id];
+      const title = id === "cat" ? cur.catName.trim() || "Miso" : d.name;
       if (d.secret) sound.secret();
       else sound.discover();
       pushToast(
-        { tone: d.secret ? "secret" : "find", tag: d.secret ? "Secret found" : "New in your notes", title: d.name, body: d.note },
+        { tone: d.secret ? "secret" : "find", tag: d.secret ? "Secret found" : "New in your notes", title, body: d.note },
         d.secret ? 5400 : 4200,
       );
       const plain = DISCOVERIES.filter((x) => !x.secret);
@@ -354,23 +355,34 @@ export default function App() {
     sound.click();
   }, []);
 
+  const closeAvatarPanel = useCallback(() => {
+    setPanel((p) => (p === "avatar" ? null : p));
+    setSave((s) => (s.onboarded ? s : { ...s, onboarded: true }));
+  }, []);
+
   const toggleModelPanel = useCallback(() => {
-    if (activityRef.current === "none") return;
+    if (restingRef.current) return;
     if (panel === "avatar") {
-      setPanel(null);
+      closeAvatarPanel();
     } else {
-      if (!thirdPersonRef.current) {
+      if (activityRef.current !== "none" && !thirdPersonRef.current) {
         setThirdPerson(true);
         sceneRef.current?.setThirdPerson(true);
       }
       setPanel("avatar");
     }
     sound.click();
-  }, [panel]);
+  }, [closeAvatarPanel, panel]);
 
   const updateAvatarConfig = useCallback((next: AvatarConfig) => {
     setSave((s) => ({ ...s, avatar: next }));
     sceneRef.current?.setAvatarConfig(next);
+  }, []);
+
+  const updateCatName = useCallback((raw: string) => {
+    const clean = raw.slice(0, 20);
+    setSave((s) => ({ ...s, catName: clean }));
+    sceneRef.current?.setCatName(clean.trim() || "Miso");
   }, []);
 
   const addTodo = useCallback((text: string) => {
@@ -593,6 +605,7 @@ export default function App() {
     sceneRef.current = scene;
     scene.setStars(saveRef.current.stars);
     scene.setAvatarConfig(saveRef.current.avatar);
+    scene.setCatName(saveRef.current.catName);
     scene.setTodos(saveRef.current.todos);
     scene.restore({ bloomed: saveRef.current.found.includes("bloom") });
     if (new URLSearchParams(window.location.search).has("debug")) {
@@ -627,7 +640,18 @@ export default function App() {
     sceneRef.current?.setUiOpen(
       panel === "timer" || panel === "journal" || panel === "todo" || panel === "exercise" || panel === "radio",
     );
+    sceneRef.current?.setAvatarPreview(panel === "avatar");
   }, [panel]);
+
+  useEffect(() => {
+    if (ready && !glError && !save.onboarded) {
+      setPanel("avatar");
+    }
+  }, [ready, glError, save.onboarded]);
+
+  useEffect(() => {
+    sceneRef.current?.setCatName(save.catName);
+  }, [save.catName]);
 
   useEffect(() => {
     sceneRef.current?.setRadioPlaying(radio.playing, radio.nowPlayingLabel);
@@ -643,7 +667,19 @@ export default function App() {
   const energyStep = Math.round(save.energy / 4);
   useEffect(() => {
     storeSave(saveRef.current);
-  }, [save.found, save.stars, energyStep, save.avatar, save.todos, save.todoPinned, save.exerciseTotalSec, save.exerciseLog, save.radio]);
+  }, [
+    save.found,
+    save.stars,
+    energyStep,
+    save.avatar,
+    save.catName,
+    save.onboarded,
+    save.todos,
+    save.todoPinned,
+    save.exerciseTotalSec,
+    save.exerciseLog,
+    save.radio,
+  ]);
 
   /* a nudge for first-time visitors once the camera has settled */
   useEffect(() => {
@@ -699,13 +735,16 @@ export default function App() {
       const onButton = (e.target as HTMLElement | null)?.closest?.("button, [role=tab], input, textarea");
       const k = e.key.toLowerCase();
       if (e.key === "Escape") {
-        if (panel) setPanel(null);
+        if (panel === "avatar") closeAvatarPanel();
+        else if (panel) setPanel(null);
         else if (restingRef.current) wake();
         else if (activityRef.current !== "none") exitActivity();
       } else if (onButton) {
         return;
       } else if (k === "v" && !restingRef.current) {
         toggleThirdPerson();
+      } else if (k === "k" && !restingRef.current) {
+        toggleModelPanel();
       } else if (k === "p") {
         e.preventDefault();
         pomo.toggle();
@@ -719,7 +758,7 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel, pomo.toggle, wake, exitActivity, toggleThirdPerson, toggleHints]);
+  }, [panel, pomo.toggle, wake, exitActivity, toggleThirdPerson, toggleModelPanel, closeAvatarPanel, toggleHints]);
 
   const resetAll = async () => {
     await clearAllTrackBlobs();
@@ -780,6 +819,12 @@ export default function App() {
           </div>
           <nav className="pointer-events-auto flex flex-col gap-2 sm:flex-row" aria-label="Room tools">
             <IconButton
+              icon="user"
+              label="Customize model & cat (K)"
+              onClick={toggleModelPanel}
+              pressed={panel === "avatar"}
+            />
+            <IconButton
               icon="list"
               label={`To-do list, ${undoneTodos} remaining (L)`}
               onClick={() => setPanel((p) => (p === "todo" ? null : "todo"))}
@@ -803,7 +848,7 @@ export default function App() {
         <div className="relative min-h-0 flex-1">
           {panel === "journal" && (
             <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
-              <Journal found={save.found} stars={save.stars} onClose={() => setPanel(null)} onReset={resetAll} />
+              <Journal found={save.found} stars={save.stars} catName={save.catName} onClose={() => setPanel(null)} onReset={resetAll} />
             </div>
           )}
           {panel === "todo" && (
@@ -829,9 +874,17 @@ export default function App() {
               />
             </div>
           )}
-          {panel === "avatar" && activity !== "none" && !resting && (
+          {panel === "avatar" && !resting && (
             <div className="pointer-events-none absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
-              <AvatarPanel config={save.avatar} onChange={updateAvatarConfig} onClose={() => setPanel(null)} />
+              <AvatarPanel
+                config={save.avatar}
+                catName={save.catName}
+                firstTime={!save.onboarded}
+                onChange={updateAvatarConfig}
+                onCatNameChange={updateCatName}
+                onDone={closeAvatarPanel}
+                onClose={closeAvatarPanel}
+              />
             </div>
           )}
           <div
@@ -857,7 +910,7 @@ export default function App() {
         {/* bottom */}
         <div className="flex flex-col items-center gap-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-end">
           <div className={cn("self-start sm:self-end sm:justify-self-start", panel && "max-sm:hidden")}>
-            <ControlsHint touch={touch} locked={locked} />
+            <ControlsHint touch={touch} locked={locked} catName={save.catName} />
           </div>
           <div className="flex flex-col items-center gap-2">
             {resting && <RestCard energy={save.energy} onWake={wake} />}

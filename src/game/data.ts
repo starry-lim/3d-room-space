@@ -254,6 +254,8 @@ export interface Save {
   stars: number;
   energy: number;
   avatar: AvatarConfig;
+  catName: string;
+  onboarded: boolean;
   todos: TodoItem[];
   todoPinned: boolean;
   exerciseTotalSec: number;
@@ -267,6 +269,8 @@ export const FRESH: Save = {
   stars: 0,
   energy: 60,
   avatar: DEFAULT_AVATAR,
+  catName: "Miso",
+  onboarded: false,
   todos: [],
   todoPinned: false,
   exerciseTotalSec: 0,
@@ -356,11 +360,17 @@ export function loadSave(): Save {
           activeTrackId,
         }
       : DEFAULT_RADIO;
+    const found = Array.isArray(s.found) ? s.found.filter((id) => known.has(id)) : [];
+    const stars = Number.isFinite(s.stars) ? Math.max(0, Math.floor(s.stars as number)) : 0;
+    const catName = typeof s.catName === "string" ? s.catName.trim().slice(0, 20) || "Miso" : "Miso";
+    const onboarded = typeof s.onboarded === "boolean" ? s.onboarded : found.length > 0 || stars > 0;
     return {
-      found: Array.isArray(s.found) ? s.found.filter((id) => known.has(id)) : [],
-      stars: Number.isFinite(s.stars) ? Math.max(0, Math.floor(s.stars as number)) : 0,
+      found,
+      stars,
       energy: Number.isFinite(s.energy) ? Math.min(100, Math.max(0, s.energy as number)) : 60,
       avatar,
+      catName,
+      onboarded,
       todos,
       todoPinned: typeof s.todoPinned === "boolean" ? s.todoPinned : false,
       exerciseTotalSec: Number.isFinite(s.exerciseTotalSec) ? Math.max(0, Math.floor(s.exerciseTotalSec as number)) : 0,

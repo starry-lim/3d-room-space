@@ -222,6 +222,7 @@ export class CatController {
   private stateTime = 0;
   private stateDur = 2.2;
   private yaw = -0.55;
+  private catName = "Miso";
 
   // Navigation & actions
   private waypoints: THREE.Vector2[] = [];
@@ -473,38 +474,43 @@ export class CatController {
     }
   }
 
+  setName(name: string) {
+    this.catName = name.trim().slice(0, 20) || "Miso";
+  }
+
   hoverLabel(): string {
-    if (this.surface === "box" && this.state === "sleep_perch") return "Pet Miso · cozy in the box";
+    const n = this.catName;
+    if (this.surface === "box" && this.state === "sleep_perch") return `Pet ${n} · cozy in the box`;
     switch (this.state) {
       case "sleep_cushion":
       case "sleep_bed":
       case "sleep_perch":
-        return "Pet Miso · sleeping";
+        return `Pet ${n} · sleeping`;
       case "rub":
-        return "Pet Miso · rubbing your leg";
+        return `Pet ${n} · rubbing your leg`;
       case "knead":
-        return "Pet Miso · making biscuits";
+        return `Pet ${n} · making biscuits`;
       case "stretch":
-        return "Pet Miso · stretching";
+        return `Pet ${n} · stretching`;
       case "groom":
-        return "Pet Miso · grooming";
+        return `Pet ${n} · grooming`;
       case "stalk":
-        return "Pet Miso · stalking…";
+        return `Pet ${n} · stalking…`;
       case "chase_yarn":
-        return "Pet Miso · chasing yarn";
+        return `Pet ${n} · chasing yarn`;
       case "play_wand":
-        return "Pet Miso · batting feathers";
+        return `Pet ${n} · batting feathers`;
       case "scratch":
-        return "Pet Miso · scratching post";
+        return `Pet ${n} · scratching post`;
       case "chase_laser":
-        return "Pet Miso · chasing laser!";
+        return `Pet ${n} · chasing laser!`;
       case "jump":
       case "play_hop":
-        return "Pet Miso · jumping";
+        return `Pet ${n} · jumping`;
       case "approach":
-        return "Pet Miso · coming over";
+        return `Pet ${n} · coming over`;
       default:
-        return "Pet Miso";
+        return `Pet ${n}`;
     }
   }
 
