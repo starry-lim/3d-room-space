@@ -35,7 +35,8 @@ export type InteractId =
   | "telescope"
   | "gameTable"
   | "rhythmBox"
-  | "gacha";
+  | "gacha"
+  | "rooftopFairy";
 
 export interface RooftopRefs {
   items: Partial<Record<InteractId, THREE.Object3D>>;
@@ -44,7 +45,7 @@ export interface RooftopRefs {
   lanternGlows: THREE.MeshStandardMaterial[];
   gachaKnob: THREE.Object3D;
   gachaCapsules: THREE.Object3D[];
-  gachaDropBall: THREE.Mesh;
+  gachaDrop: { root: THREE.Group; topHalf: THREE.Mesh; botHalf: THREE.Mesh };
   tableCards: THREE.Mesh[];
 }
 

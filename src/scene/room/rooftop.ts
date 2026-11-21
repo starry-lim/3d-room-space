@@ -13,7 +13,7 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
     lanternGlows: [],
     gachaKnob: new THREE.Group(),
     gachaCapsules: [],
-    gachaDropBall: null as unknown as THREE.Mesh,
+    gachaDrop: null as unknown as RooftopRefs["gachaDrop"],
     tableCards: [],
   };
 
@@ -71,7 +71,8 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
     rooftop.add(ball(0.06, M(PAL.brass, 0.4, 0.6), px, POLE_H + 0.04, pz, 10, 8));
   }
 
-  // Span string-lights around perimeter and across diagonals
+  // Span clickable string-lights around perimeter and across diagonal
+  const fairyG = tag(new THREE.Group(), "rooftopFairy");
   const spans: [[number, number], [number, number]][] = [
     [corners[0], corners[1]],
     [corners[1], corners[2]],
@@ -91,7 +92,7 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
       pts.push(p);
     }
     const curve = new THREE.CatmullRomCurve3(pts);
-    rooftop.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.006, 5), wireMat));
+    fairyG.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.006, 5), wireMat));
     for (let i = 1; i <= 7; i++) {
       bulbPts.push(curve.getPointAt(i / 8));
     }
@@ -114,7 +115,18 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
     bulbs.setColorAt(i, c);
   }
   bulbs.frustumCulled = false;
-  rooftop.add(bulbs);
+  fairyG.add(bulbs);
+  for (const sz of [ROOFTOP_ROOM.minZ + 0.12, ROOFTOP_ROOM.maxZ - 0.12]) {
+    fairyG.add(hitProxy(W, 0.42, 0.44, 0, POLE_H - 0.18, sz));
+  }
+  for (const sx of [ROOFTOP_ROOM.minX + 0.12, ROOFTOP_ROOM.maxX - 0.12]) {
+    fairyG.add(hitProxy(0.44, 0.42, D, sx, POLE_H - 0.18, 0));
+  }
+  const diagHit = hitProxy(Math.hypot(W, D) - 0.4, 0.42, 0.5, 0, POLE_H - 0.24, 0);
+  diagHit.rotation.y = Math.atan2(-(corners[2][1] - corners[0][1]), corners[2][0] - corners[0][0]);
+  fairyG.add(diagHit);
+  rooftop.add(fairyG);
+  refs.items.rooftopFairy = fairyG;
   refs.fairyBulbs = bulbs;
 
   /* ---------------- Cozy Deck Rug & Corner Planter Boxes ---------------- */
@@ -309,16 +321,22 @@ export function buildRooftop(): { rooftop: THREE.Group; refs: RooftopRefs } {
     refs.gachaCapsules.push(cap);
   }
 
-  // Hidden drop capsule at chute for pull animation
-  const dropBall = new THREE.Mesh(
-    new THREE.SphereGeometry(0.055, 16, 12),
-    new THREE.MeshStandardMaterial({ color: PAL.tomato, roughness: 0.4 }),
+  // Hidden splittable two-tone capsule for pull & crack-open reveal animation
+  const dropRoot = new THREE.Group();
+  dropRoot.position.set(0, 0.19, 0.26);
+  dropRoot.visible = false;
+  const topHalf = new THREE.Mesh(
+    new THREE.SphereGeometry(0.064, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: PAL.tomato, roughness: 0.35 }),
   );
-  dropBall.position.set(0, 0.19, 0.26);
-  dropBall.visible = false;
-  dropBall.castShadow = false;
-  gacha.add(dropBall);
-  refs.gachaDropBall = dropBall;
+  const botHalf = new THREE.Mesh(
+    new THREE.SphereGeometry(0.064, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
+    M(PAL.cream, 0.45),
+  );
+  topHalf.castShadow = botHalf.castShadow = false;
+  dropRoot.add(topHalf, botHalf);
+  gacha.add(dropRoot);
+  refs.gachaDrop = { root: dropRoot, topHalf, botHalf };
 
   // Turnable crank knob on the front
   const knob = new THREE.Group();

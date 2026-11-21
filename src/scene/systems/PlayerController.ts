@@ -69,6 +69,7 @@ export interface PlayerControllerDeps {
   onHoverChange: (label: string | null) => void;
   onLockChange?: (locked: boolean) => void;
   onMoveSfx?: (kind: "step" | "jump" | "land", detail?: MoveSfxDetail) => void;
+  onStargazeClick?: (ndcX: number, ndcY: number) => void;
 }
 
 /** Manages player movement, collision, 1st/3rd-person cameras, keyboard hotkeys, pointer drag/lock, and picking. */
@@ -112,6 +113,7 @@ export class PlayerController {
   private tpDist = 2.35;
   private camTween: Tween | null = null;
   private preFocus: { pos: THREE.Vector3; yaw: number; pitch: number } | null = null;
+  private focusView: FocusViewMode = "none";
 
   private dragging = false;
   private dragStart: { x: number; y: number; yaw: number; pitch: number } | null = null;
@@ -344,6 +346,8 @@ export class PlayerController {
 
   setFocusView(mode: FocusViewMode): void {
     if (this.activity !== "none" || this.resting) return;
+    if (mode === this.focusView) return;
+    this.focusView = mode;
     if (mode !== "none") {
       if (!this.preFocus) {
         this.preFocus = {
@@ -357,17 +361,22 @@ export class PlayerController {
       if (mode === "stargazing") {
         this.glideCameraTo(new THREE.Vector3(-1.85, 1.55, -1.85), -0.65, 0.68, 0.65);
       } else if (mode === "gacha") {
-        // Capsule machine at (2.15, 0, 0.95): frame center-left while right side holds UI
-        this.glideCameraTo(new THREE.Vector3(0.95, 1.15, 1.85), -1.14, -0.22, 0.65);
+        // Frame full Capsule Machine as left-center hero opposite the right-hand panel
+        this.glideCameraTo(new THREE.Vector3(1.12, 0.88, 1.98), -1.02, -0.14, 0.65);
       } else if (mode === "memory") {
-        // Angled overhead view centered on the patio game table at (-1.75, 0.65, 0.75)
-        this.glideCameraTo(new THREE.Vector3(-1.05, 1.92, 1.48), 0.76, -0.9, 0.65);
+        // Overhead view centered on the round patio game table at (-1.75, 0.65, 0.75)
+        this.glideCameraTo(new THREE.Vector3(-1.75, 1.62, 0.96), 0, -1.35, 0.65);
       }
     } else if (this.preFocus) {
       const prev = this.preFocus;
       this.preFocus = null;
       this.glideCameraTo(prev.pos, prev.yaw, prev.pitch, 0.5);
     }
+  }
+
+  aimTelescope(targetYaw: number, targetPitch: number): void {
+    if (this.focusView !== "stargazing") return;
+    this.glideCameraTo(new THREE.Vector3(-1.85, 1.55, -1.85), targetYaw, targetPitch, 0.65);
   }
 
   setRegion(
@@ -378,6 +387,7 @@ export class PlayerController {
     spawnYaw: number,
     spawnPitch: number,
   ): void {
+    this.focusView = "none";
     this.preFocus = null;
     this.cancelCamTween();
     this.unlockPointer();
@@ -456,7 +466,15 @@ export class PlayerController {
     const running = !this.resting && this.activity === "none" && !this.uiOpen && !this.crouched && shiftHeld && hasMove;
 
     const targetFov =
-      this.resting || this.activity !== "none" ? FOV_WALK : running ? FOV_RUN : this.crouched ? FOV_CROUCH : FOV_WALK;
+      this.focusView === "stargazing"
+        ? 46
+        : this.resting || this.activity !== "none"
+          ? FOV_WALK
+          : running
+            ? FOV_RUN
+            : this.crouched
+              ? FOV_CROUCH
+              : FOV_WALK;
     this.fovCur = approach(this.fovCur, targetFov, 9, dt);
     const { camera } = this.deps;
     if (Math.abs(camera.fov - this.fovCur) > 0.02) {
@@ -501,6 +519,13 @@ export class PlayerController {
     if (this.avatarPreview) {
       camera.position.copy(this.tpCameraPos(this.tmpV));
       camera.lookAt(this.tpTarget);
+      return;
+    }
+
+    if (this.focusView !== "none") {
+      if (this.focusView === "stargazing" || this.focusView === "gacha") {
+        camera.rotation.set(this.pitch, this.yaw, 0, "YXZ");
+      }
       return;
     }
 
@@ -970,6 +995,7 @@ export class PlayerController {
           this.tpPitch = Math.max(0.06, Math.min(0.95, this.dragStart.pitch + dy * sens));
           return;
         }
+        if (this.focusView === "memory") return;
         const sens = this.deps.mobile ? 0.0052 : 0.0038;
         this.yaw = this.dragStart.yaw - dx * sens;
         this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.dragStart.pitch - dy * sens));
@@ -977,6 +1003,11 @@ export class PlayerController {
           const baseYaw = ACTIVITIES[this.activity].fpYaw;
           this.yaw = baseYaw + Math.max(-1.65, Math.min(1.65, angleDelta(baseYaw, this.yaw)));
           this.pitch = Math.max(-1.05, Math.min(0.85, this.pitch));
+        } else if (this.focusView === "stargazing") {
+          this.pitch = Math.max(0.22, Math.min(1.38, this.pitch));
+        } else if (this.focusView === "gacha") {
+          this.yaw = Math.max(-1.16, Math.min(-0.88, this.yaw));
+          this.pitch = Math.max(-0.24, Math.min(-0.04, this.pitch));
         }
         return;
       }
@@ -1006,6 +1037,13 @@ export class PlayerController {
     const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
     const slop = e.pointerType === "mouse" ? 6 : 14;
     if (moved > slop || performance.now() - d.t > 650) return;
+    if (this.focusView === "stargazing") {
+      const r = this.deps.domElement.getBoundingClientRect();
+      const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+      const ny = -((e.clientY - r.top) / r.height) * 2 + 1;
+      this.deps.onStargazeClick?.(nx, ny);
+      return;
+    }
     const item = this.pick(e.clientX, e.clientY);
     if (item) {
       this.deps.onInteractItem(item);

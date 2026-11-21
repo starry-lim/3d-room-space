@@ -5,7 +5,6 @@ import {
   CONSTELLATIONS,
   MEMORY_CARDS,
   TRINKETS,
-  type ConstellationDef,
   type MemoryCardDef,
   type TrinketDef,
 } from "../game/rooftopData";
@@ -398,50 +397,22 @@ function renderFigureArt(id: string) {
 export function StargazingPanel({
   completedIds,
   tokens,
-  onCompleteConstellation,
+  selectedIdx,
+  step,
+  finished,
+  onSelect,
   onClose,
 }: {
   completedIds: string[];
   tokens: number;
-  onCompleteConstellation: (c: ConstellationDef, isFirstTime: boolean) => void;
+  selectedIdx: number;
+  step: number;
+  finished: boolean;
+  onSelect: (idx: number) => void;
   onClose: () => void;
 }) {
-  const initialIdx = useMemo(() => {
-    const firstOpen = CONSTELLATIONS.findIndex((c) => !completedIds.includes(c.id));
-    return firstOpen >= 0 ? firstOpen : 0;
-  }, [completedIds]);
-
-  const [selectedIdx, setSelectedIdx] = useState(initialIdx);
-  const [step, setStep] = useState(0);
-  const [finishedThisRound, setFinishedThisRound] = useState(false);
-
-  const cur = CONSTELLATIONS[selectedIdx];
-  const isAlreadyDone = completedIds.includes(cur.id);
+  const cur = CONSTELLATIONS[selectedIdx] ?? CONSTELLATIONS[0];
   const totalStars = cur.stars.length;
-
-  const selectConstellation = (idx: number) => {
-    sound.click();
-    setSelectedIdx(idx);
-    setStep(0);
-    setFinishedThisRound(false);
-  };
-
-  const handleStarClick = (idx: number) => {
-    if (finishedThisRound || idx !== step) return;
-    sound.rhythmNote((idx % 3) as 0 | 1 | 2);
-    const nextStep = step + 1;
-    if (nextStep >= totalStars) {
-      setStep(totalStars);
-      setFinishedThisRound(true);
-      sound.sparkle();
-      onCompleteConstellation(cur, !isAlreadyDone);
-    } else {
-      setStep(nextStep);
-    }
-  };
-
-  // Single top-priority click target so overlapping start/end vertices never swallow clicks
-  const nextCoord = !finishedThisRound && step < totalStars ? cur.stars[step] : null;
 
   return (
     <aside
@@ -455,7 +426,8 @@ export function StargazingPanel({
           <div>
             <h2 className="font-display text-[22px] font-semibold italic leading-none">Stargazing</h2>
             <p className="mt-1 text-[11.5px] font-semibold text-ink-soft">
-              Connect the stars in order · {completedIds.length}/{CONSTELLATIONS.length} charted · {tokens} Tokens
+              Pan the telescope sky &amp; click glowing stars in order · {completedIds.length}/{CONSTELLATIONS.length} charted ·{" "}
+              {tokens} Tokens
             </p>
           </div>
           <button
@@ -476,114 +448,37 @@ export function StargazingPanel({
               <button
                 key={c.id}
                 type="button"
-                onClick={() => selectConstellation(idx)}
+                onClick={() => {
+                  sound.click();
+                  onSelect(idx);
+                }}
                 className={cn(
                   "rounded-full border-[1.5px] border-ink px-2.5 py-0.5 text-[11px] font-extrabold transition-colors",
-                  active ? "bg-mustard text-ink" : done ? "bg-sage/30 text-ink hover:bg-sage/45" : "bg-white/75 text-ink-soft hover:bg-paper-deep",
+                  active
+                    ? "bg-mustard text-ink"
+                    : done
+                      ? "bg-sage/30 text-ink hover:bg-sage/45"
+                      : "bg-white/75 text-ink-soft hover:bg-paper-deep",
                 )}
               >
-                {done ? "✓ " : ""}{c.name}
+                {done ? "✓ " : ""}
+                {c.name}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Live 3D sky eyepiece reticle */}
-      <div className="pointer-events-auto relative h-[min(48vh,340px)] w-[min(48vh,340px)] shrink-0 overflow-hidden rounded-full border-2 border-mustard/45 bg-[#120f24]/30">
-        <svg viewBox="0 0 100 100" className="block h-full w-full select-none">
-          {/* Ghost guide lines */}
-          {cur.stars.slice(0, -1).map(([x1, y1], i) => {
-            const [x2, y2] = cur.stars[i + 1];
-            return (
-              <line
-                key={`g-${i}`}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke="#cfe0ff"
-                strokeWidth="0.6"
-                strokeDasharray="1.8 1.8"
-                opacity="0.38"
-              />
-            );
-          })}
-          {cur.extraEdges?.map(([a, b], i) => {
-            const [x1, y1] = cur.stars[a];
-            const [x2, y2] = cur.stars[b];
-            const show = finishedThisRound || (step > a && step > b);
-            return (
-              <line
-                key={`ex-${i}`}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke={show ? "#f6c95d" : "#cfe0ff"}
-                strokeWidth={show ? "1.4" : "0.6"}
-                strokeDasharray={show ? undefined : "1.8 1.8"}
-                opacity={show ? 0.95 : 0.3}
-              />
-            );
-          })}
-
-          {/* Connected golden lines */}
-          {cur.stars.slice(0, Math.max(0, step - 1)).map(([x1, y1], i) => {
-            const [x2, y2] = cur.stars[i + 1];
-            return (
-              <line
-                key={`c-${i}`}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke="#f6c95d"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            );
-          })}
-
-          {/* Star nodes */}
-          {cur.stars.map(([x, y], i) => {
-            const lit = i < step;
-            const isNext = !finishedThisRound && i === step;
-            return (
-              <g key={`st-${i}`}>
-                {isNext && (
-                  <circle cx={x} cy={y} r="5.5" fill="none" stroke="#f6c95d" strokeWidth="1" opacity="0.85">
-                    <animate attributeName="r" values="4.2;6.8;4.2" dur="1.6s" repeatCount="indefinite" />
-                  </circle>
-                )}
-                <circle
-                  cx={x}
-                  cy={y}
-                  r={lit ? 2.6 : isNext ? 3 : 2}
-                  fill={lit || isNext ? "#ffe799" : "#d9e4ff"}
-                  stroke="#120f24"
-                  strokeWidth="0.6"
-                />
-              </g>
-            );
-          })}
-
-          {nextCoord && (
-            <circle
-              cx={nextCoord[0]}
-              cy={nextCoord[1]}
-              r="8.5"
-              fill="transparent"
-              className="cursor-pointer"
-              onClick={() => handleStarClick(step)}
-            />
-          )}
-        </svg>
+      {/* Pure optical telescope eyepiece crosshair (pointer-events-none so you drag/click real 3D stars in the sky) */}
+      <div className="pointer-events-none relative grid h-[min(56vh,400px)] w-[min(56vh,400px)] shrink-0 place-items-center rounded-full border-2 border-mustard/55 shadow-[0_0_0_9999px_rgba(14,11,26,0.28)]">
+        <div className="h-[88%] w-[88%] rounded-full border border-dashed border-[#ffe799]/25" />
+        <div className="absolute h-4 w-4 rounded-full border border-mustard/75" />
+        <div className="absolute h-1.5 w-1.5 rounded-full bg-mustard/80" />
       </div>
 
       {/* Bottom compact paper bar */}
       <div className="paper anim-rise pointer-events-auto w-full rounded-[20px] px-4 py-2.5">
-        {finishedThisRound ? (
+        {finished ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -596,7 +491,10 @@ export function StargazingPanel({
             </div>
             <button
               type="button"
-              onClick={() => selectConstellation((selectedIdx + 1) % CONSTELLATIONS.length)}
+              onClick={() => {
+                sound.click();
+                onSelect((selectedIdx + 1) % CONSTELLATIONS.length);
+              }}
               className="press shrink-0 rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
             >
               Next Constellation
@@ -605,9 +503,10 @@ export function StargazingPanel({
         ) : (
           <div className="flex items-center justify-between gap-2 text-[12px] font-semibold text-ink-soft">
             <span>
-              <strong className="text-ink">{cur.name}</strong> · Tap highlighted star ({step + 1}/{totalStars})
+              <strong className="text-ink">{cur.name}</strong> · Drag sky to pan &amp; click pulsing star ({step + 1}/
+              {totalStars})
             </span>
-            <span>Reward: +6 Energy · +2 Tokens</span>
+            <span>+6 Energy · +2 Tokens</span>
           </div>
         )}
       </div>
@@ -713,100 +612,100 @@ export function MemoryMatchPanel({
     <aside
       role="dialog"
       aria-label="Cozy Memory Match"
-      className="paper anim-rise pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] bg-paper/95 sm:w-[420px]"
+      className="pointer-events-none flex max-h-full w-full max-w-[460px] flex-col items-center justify-between gap-2.5"
     >
-      <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
+      {/* Top compact tabletop bar */}
+      <div className="paper anim-rise pointer-events-auto flex w-full flex-wrap items-center justify-between gap-2 rounded-[20px] px-4 py-2.5">
         <div>
-          <h2 className="font-display text-[25px] font-semibold italic leading-none">Memory Match</h2>
-          <p className="mt-1.5 text-[12px] font-semibold text-ink-soft">
+          <h2 className="font-display text-[21px] font-semibold italic leading-none">Memory Match</h2>
+          <p className="mt-1 text-[11.5px] font-semibold text-ink-soft">
             Moves: {moves} {bestMoves !== null ? `· Best: ${bestMoves}` : ""} · {tokens} Tokens
           </p>
         </div>
-        <button
-          type="button"
-          aria-label="Close memory match"
-          onClick={onClose}
-          className="-mr-1 -mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
-        >
-          <Icon name="x" />
-        </button>
-      </header>
+        <div className="flex items-center gap-1.5">
+          {([6, 8] as const).map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => startNew(n)}
+              className={cn(
+                "rounded-full border-[1.5px] border-ink px-2.5 py-1 text-[11px] font-extrabold",
+                pairCount === n ? "bg-mustard text-ink" : "bg-white/75 text-ink-soft hover:bg-paper-deep",
+              )}
+            >
+              {n === 6 ? "4×3" : "4×4"}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => startNew(pairCount)}
+            className="rounded-full border-[1.5px] border-ink bg-white/80 px-2.5 py-1 text-[11px] font-extrabold hover:bg-paper-deep"
+          >
+            Shuffle
+          </button>
+          <button
+            type="button"
+            aria-label="Close memory match"
+            onClick={onClose}
+            className="ml-1 grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
+          >
+            <Icon name="x" />
+          </button>
+        </div>
+      </div>
 
-      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto">
-        <div className="mt-3 flex items-center justify-between gap-2 px-4 sm:px-5">
-          <div className="flex gap-1.5">
-            {([6, 8] as const).map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => startNew(n)}
-                className={cn(
-                  "rounded-full border-[1.5px] border-ink px-2.5 py-1 text-[11.5px] font-extrabold",
-                  pairCount === n ? "bg-mustard text-ink" : "bg-white/75 text-ink-soft hover:bg-paper-deep",
-                )}
-              >
-                {n === 6 ? "4×3 Cozy" : "4×4 Full"}
-              </button>
-            ))}
+      {/* Frameless cards laid directly over the 3D wooden tabletop */}
+      <div className="pointer-events-auto grid w-[min(78vw,390px)] grid-cols-4 gap-2.5">
+        {cards.map((card, i) => {
+          const open = card.flipped || card.matched;
+          return (
+            <button
+              key={card.uid}
+              type="button"
+              onClick={() => flipCard(i)}
+              disabled={open}
+              className="card-3d relative aspect-square cursor-pointer rounded-2xl focus-visible:outline-mustard"
+            >
+              <div className={cn("card-inner", open && "flipped")}>
+                {/* Card Back */}
+                <div className="card-face flex flex-col items-center justify-center rounded-2xl border-[1.5px] border-ink bg-paper/95 shadow-[2px_3px_0_var(--color-ink)] transition-colors hover:bg-mustard/50">
+                  <span className="text-[18px] text-ink/45">✦</span>
+                </div>
+                {/* Card Front */}
+                <div
+                  style={{ backgroundColor: card.def.bg, borderColor: card.def.accent }}
+                  className={cn(
+                    "card-face card-face-front flex flex-col items-center justify-center rounded-2xl border-[1.5px] shadow-[2px_3px_0_var(--color-ink)]",
+                    card.matched && "anim-pop ring-2 ring-mustard/80",
+                  )}
+                >
+                  <span className="text-[24px] leading-none">{card.def.symbol}</span>
+                  <span className="mt-1 text-[10px] font-extrabold text-ink/85">{card.def.label}</span>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Win banner */}
+      {won ? (
+        <div className="paper anim-pop pointer-events-auto flex w-full items-center justify-between gap-2 rounded-[20px] px-4 py-2.5">
+          <div>
+            <p className="font-display text-[15px] font-semibold">Cleared in {moves} moves!</p>
+            <p className="text-[11.5px] font-semibold text-ink-soft">+6 Energy · +2 Rooftop Tokens</p>
           </div>
           <button
             type="button"
             onClick={() => startNew(pairCount)}
-            className="rounded-full border-[1.5px] border-ink bg-white/80 px-2.5 py-1 text-[11.5px] font-extrabold hover:bg-paper-deep"
+            className="press rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
           >
-            Shuffle
+            Play Again
           </button>
         </div>
-
-        <div className="grid grid-cols-4 gap-2.5 p-4 sm:p-5">
-          {cards.map((card, i) => {
-            const open = card.flipped || card.matched;
-            return (
-              <button
-                key={card.uid}
-                type="button"
-                onClick={() => flipCard(i)}
-                disabled={open}
-                className="card-3d relative aspect-square cursor-pointer rounded-2xl focus-visible:outline-mustard"
-              >
-                <div className={cn("card-inner", open && "flipped")}>
-                  {/* Card Back */}
-                  <div className="card-face flex flex-col items-center justify-center rounded-2xl border-[1.5px] border-ink bg-paper-deep/95 shadow-[2px_2px_0_var(--color-ink)] transition-colors hover:bg-mustard/40">
-                    <span className="text-[18px] text-ink/45">✦</span>
-                  </div>
-                  {/* Card Front */}
-                  <div
-                    style={{ backgroundColor: card.def.bg, borderColor: card.def.accent }}
-                    className={cn(
-                      "card-face card-face-front flex flex-col items-center justify-center rounded-2xl border-[1.5px] shadow-[2px_2px_0_var(--color-ink)]",
-                      card.matched && "anim-pop ring-2 ring-mustard/80",
-                    )}
-                  >
-                    <span className="text-[24px] leading-none">{card.def.symbol}</span>
-                    <span className="mt-1 text-[10px] font-extrabold text-ink/85">{card.def.label}</span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {won && (
-          <div className="anim-pop mx-4 mb-4 flex items-center justify-between gap-2 rounded-2xl border-[1.5px] border-ink bg-white/85 px-3.5 py-2.5 sm:mx-5 sm:mb-5">
-            <div>
-              <p className="font-display text-[15px] font-semibold">Cleared in {moves} moves!</p>
-              <p className="text-[11.5px] font-semibold text-ink-soft">+6 Energy · +2 Rooftop Tokens</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => startNew(pairCount)}
-              className="press rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
-            >
-              Play Again
-            </button>
-          </div>
-        )}
-      </div>
+      ) : (
+        <div className="h-2" aria-hidden />
+      )}
     </aside>
   );
 }
@@ -824,9 +723,7 @@ interface RhythmNote {
 
 const SONG_DURATION_MS = 30000;
 const TRAVEL_MS = 1650;
-const HIT_LINE_PCT = 82;
 const LANE_KEYS = ["A / J", "S / K", "D / L"] as const;
-const LANE_COLORS = ["#e4572e", "#e9b44c", "#7d9b76"] as const;
 
 function generateChart(): RhythmNote[] {
   const notes: RhythmNote[] = [];
@@ -1040,194 +937,275 @@ export function RhythmTapPanel({
   }, [phase, tapLane, setLanePressed]);
 
   const secsLeft = Math.max(0, Math.ceil((SONG_DURATION_MS - elapsedMs) / 1000));
+  const rank = score >= 900 ? "S" : score >= 550 ? "A" : score >= 250 ? "B" : "C";
+  const rankPct = Math.min(100, (score / 1000) * 100);
+  const songPct = phase === "done" ? 100 : Math.min(100, (elapsedMs / SONG_DURATION_MS) * 100);
+  const paddedScore = String(score).padStart(6, "0");
+  const highwayColors = ["#ff7052", "#ffd166", "#7de0a6"] as const;
 
   return (
     <aside
       role="dialog"
       aria-label="Lo-Fi Rhythm Tap"
-      className="paper anim-rise pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] sm:w-[440px]"
+      className="paper anim-rise pointer-events-auto flex max-h-full w-full max-w-[680px] flex-col rounded-[26px] bg-[#161229] text-[#f7eedc]"
     >
-      <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
-        <div>
-          <h2 className="font-display text-[25px] font-semibold italic leading-none">Lo-Fi Rhythm</h2>
-          <p className="mt-1.5 text-[12px] font-semibold text-ink-soft">
-            Score: {score} · Best: {Math.max(bestScore, score)} · {tokens} Tokens
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Close rhythm game"
-          onClick={onClose}
-          className="-mr-1 -mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
-        >
-          <Icon name="x" />
-        </button>
-      </header>
-
-      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto">
-        <div className="px-4 pt-3 sm:px-5">
-          <div className="relative h-[306px] overflow-hidden rounded-[20px] border-[1.5px] border-ink bg-[#211a30] text-[#f7eedc]">
-            {/* Status bar */}
-            <div className="flex items-center justify-between px-3 py-2 text-[11.5px] font-extrabold">
-              <span>{phase === "playing" ? `${secsLeft}s left` : "30s Lo-Fi Set"}</span>
-              <span className="text-mustard">{combo > 1 ? `${combo}× Combo` : judge?.text ?? "Chill pace"}</span>
+      {/* Project SEKAI-inspired Top Stage HUD */}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#1e1838] px-4 py-3 rounded-t-[24px] sm:px-5">
+        {/* Left: Rank diamond + Score bar */}
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              "grid h-10 w-10 rotate-45 place-items-center rounded-lg border-2 font-display text-[19px] font-bold shadow",
+              rank === "S"
+                ? "border-[#ffe57f] bg-mustard text-ink"
+                : rank === "A"
+                  ? "border-[#ff9b7d] bg-tomato text-paper"
+                  : rank === "B"
+                    ? "border-[#9de8bd] bg-sage text-paper"
+                    : "border-[#9fb4ff] bg-[#2f355c] text-[#f7eedc]",
+            )}
+          >
+            <span className="-rotate-45 leading-none">{rank}</span>
+          </div>
+          <div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#b8c7f2]">Score</span>
+              <span className="font-mono text-[19px] font-extrabold leading-none tracking-wider text-white">
+                {paddedScore}
+              </span>
             </div>
-
-            {/* 3-lane track */}
-            <div className="relative grid h-[222px] grid-cols-3 border-t border-white/10">
-              {([0, 1, 2] as const).map((lane) => (
+            <div className="mt-1 flex items-center gap-1.5">
+              <div className="relative h-2 w-36 overflow-hidden rounded-full bg-white/15 sm:w-44">
                 <div
-                  key={lane}
-                  className={cn(
-                    "relative border-r border-white/10 last:border-r-0 transition-colors duration-75",
-                    pressedLanes[lane] && "bg-white/15",
-                  )}
+                  className="h-full bg-gradient-to-r from-[#7de0a6] via-[#ffd166] to-[#ff7052] transition-[width] duration-150"
+                  style={{ width: `${rankPct}%` }}
                 />
-              ))}
-
-              {/* Target hit line */}
-              <div
-                className="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-mustard/75"
-                style={{ top: `${HIT_LINE_PCT}%` }}
-              />
-
-              {/* 3 target receptor rings + lane hit burst feedback */}
-              {([0, 1, 2] as const).map((lane) => {
-                const pressed = pressedLanes[lane];
-                const fx = laneFx?.lane === lane ? laneFx : null;
-                const leftPct = lane * 33.333 + 16.666;
-                return (
-                  <div
-                    key={`rec-${lane}`}
-                    className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-                    style={{ left: `${leftPct}%`, top: `${HIT_LINE_PCT}%` }}
-                  >
-                    {fx && fx.kind !== "miss" && (
-                      <div
-                        key={fx.key}
-                        className="anim-pop absolute -inset-3 rounded-full border-2"
-                        style={{ borderColor: LANE_COLORS[lane], opacity: 0.9 }}
-                      />
-                    )}
-                    <div
-                      className={cn(
-                        "h-8 w-8 rounded-full border-2 transition-transform duration-75",
-                        pressed ? "scale-110" : "scale-100",
-                      )}
-                      style={{
-                        borderColor: pressed || fx ? LANE_COLORS[lane] : "rgba(247, 238, 220, 0.35)",
-                        backgroundColor: pressed ? `${LANE_COLORS[lane]}44` : "transparent",
-                      }}
-                    />
-                    {fx && (
-                      <span
-                        key={`txt-${fx.key}`}
-                        className={cn(
-                          "anim-pop absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-extrabold shadow",
-                          fx.kind === "perfect"
-                            ? "bg-mustard text-ink"
-                            : fx.kind === "good"
-                              ? "bg-sage text-paper"
-                              : "bg-night/90 text-[#f7eedc]/75",
-                        )}
-                      >
-                        {fx.kind === "perfect" ? "Perfect!" : fx.kind === "good" ? "Good!" : "Miss"}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Falling notes */}
-              {phase === "playing" &&
-                notes.map((n) => {
-                  if (n.status !== "pending") return null;
-                  const progress = 1 - (n.hitAtMs - elapsedMs) / TRAVEL_MS;
-                  if (progress < -0.05 || progress > 1.15) return null;
-                  const yPct = progress * HIT_LINE_PCT;
-                  const leftPct = n.lane * 33.333 + 16.666;
-                  return (
-                    <div
-                      key={n.id}
-                      className="pointer-events-none absolute h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#f7eedc] shadow-md"
-                      style={{
-                        left: `${leftPct}%`,
-                        top: `${yPct}%`,
-                        backgroundColor: LANE_COLORS[n.lane],
-                      }}
-                    />
-                  );
-                })}
-
-              {phase === "ready" && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#211a30]/85 px-6 text-center">
-                  <p className="font-display text-[19px] font-semibold">Tap falling lanterns</p>
-                  <p className="mt-1 text-[12px] text-[#f7eedc]/75">Use keys A / S / D (or J / K / L) or click the pads below.</p>
-                  <button
-                    type="button"
-                    onClick={startRound}
-                    className="press mt-4 rounded-xl border-[1.5px] border-ink bg-mustard px-4 py-2 text-[13px] font-extrabold text-ink"
-                  >
-                    Start 30s Chill Beat
-                  </button>
-                </div>
-              )}
-
-              {phase === "done" && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#211a30]/90 px-6 text-center">
-                  <p className="font-display text-[21px] font-semibold text-mustard">Nice Groove!</p>
-                  <p className="mt-1 text-[13px] font-bold">
-                    Score {score} · Max Combo {maxCombo}
-                  </p>
-                  <p className="mt-1 text-[12px] text-[#f7eedc]/80">
-                    +8 Energy · +{score >= 250 ? 3 : 2} Rooftop Tokens
-                  </p>
-                  <button
-                    type="button"
-                    onClick={startRound}
-                    className="press mt-4 rounded-xl border-[1.5px] border-ink bg-tomato px-4 py-2 text-[13px] font-extrabold text-paper"
-                  >
-                    Play Again
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Interactive hit pads */}
-            <div className="grid h-[48px] grid-cols-3 gap-1 border-t border-white/15 bg-black/30 p-1">
-              {([0, 1, 2] as const).map((lane) => {
-                const down = pressedLanes[lane];
-                return (
-                  <button
-                    key={lane}
-                    type="button"
-                    onPointerDown={() => {
-                      setLanePressed(lane, true);
-                      tapLane(lane);
-                    }}
-                    onPointerUp={() => setLanePressed(lane, false)}
-                    onPointerLeave={() => setLanePressed(lane, false)}
-                    onPointerCancel={() => setLanePressed(lane, false)}
-                    style={down ? { backgroundColor: LANE_COLORS[lane], color: "#231a2b" } : undefined}
-                    className={cn(
-                      "flex items-center justify-center rounded-lg border border-white/15 text-[12px] font-extrabold tracking-wide transition-transform duration-75",
-                      down ? "scale-[0.95]" : "bg-white/5 hover:bg-white/10",
-                    )}
-                  >
-                    <span
-                      className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full border border-black/30"
-                      style={{ backgroundColor: down ? "#231a2b" : LANE_COLORS[lane] }}
-                    />
-                    {LANE_KEYS[lane]}
-                  </button>
-                );
-              })}
+              </div>
+              <span className="text-[9.5px] font-extrabold text-white/60">C · B · A · S</span>
             </div>
           </div>
         </div>
 
-        <p className="px-4 py-3 text-[11.5px] font-semibold text-ink-soft sm:px-5">
-          Tip: Score 250+ for a bonus token (+3 total)!
+        {/* Right: Song progress, Best, Tokens & Close */}
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-[11px] font-extrabold text-mustard">
+              {phase === "playing" ? `${secsLeft}s left` : phase === "done" ? "Finished" : "30s Set"} · Best {Math.max(bestScore, score)}
+            </p>
+            <div className="mt-1 flex items-center justify-end gap-2">
+              <div className="h-1.5 w-24 overflow-hidden rounded-full bg-white/15">
+                <div className="h-full bg-[#7ce8ff] transition-[width] duration-150" style={{ width: `${songPct}%` }} />
+              </div>
+              <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-extrabold">
+                🪙 {tokens}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Close rhythm game"
+            onClick={onClose}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-[#f7eedc] transition-colors hover:bg-white/20"
+          >
+            <Icon name="x" />
+          </button>
+        </div>
+      </header>
+
+      {/* Main 3D Perspective Stage */}
+      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+        <div
+          className="relative flex h-[min(60vh,430px)] min-h-[320px] flex-col overflow-hidden rounded-[20px] border border-white/15"
+          style={{
+            background:
+              "radial-gradient(circle at 20% 22%, rgba(124,232,255,0.16) 0, transparent 38%), radial-gradient(circle at 82% 28%, rgba(255,112,82,0.16) 0, transparent 42%), linear-gradient(180deg, #120e24 0%, #241b42 62%, #312352 100%)",
+          }}
+        >
+          {/* Floating Combo Counter on Right Side */}
+          {phase === "playing" && combo >= 2 && (
+            <div key={`cmb-${combo}`} className="anim-pop pointer-events-none absolute right-5 top-1/3 z-20 text-center sm:right-8">
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.26em] text-[#7ce8ff]">Combo</p>
+              <p
+                className="font-display text-[46px] font-bold italic leading-none text-white"
+                style={{ textShadow: "0 0 18px rgba(124,232,255,0.7)" }}
+              >
+                {combo}
+              </p>
+            </div>
+          )}
+
+          {/* Center Floating Judgment Word (PERFECT / GREAT / MISS) */}
+          {phase === "playing" && (laneFx || judge) && (
+            <div
+              key={`jdg-${laneFx?.key ?? judge?.key}`}
+              className="anim-pop pointer-events-none absolute bottom-[26%] left-1/2 z-20 -translate-x-1/2 text-center"
+            >
+              <span
+                className={cn(
+                  "font-display text-[26px] font-extrabold italic tracking-wider sm:text-[32px]",
+                  (laneFx?.kind ?? (judge?.text === "Perfect!" ? "perfect" : judge?.text === "Good!" ? "good" : "miss")) === "perfect"
+                    ? "text-[#ffe373]"
+                    : (laneFx?.kind ?? "good") === "good"
+                      ? "text-[#7de0a6]"
+                      : "text-white/65",
+                )}
+                style={{ textShadow: "0 2px 12px rgba(0,0,0,0.65)" }}
+              >
+                {laneFx
+                  ? laneFx.kind === "perfect"
+                    ? "PERFECT"
+                    : laneFx.kind === "good"
+                      ? "GREAT"
+                      : "MISS"
+                  : judge?.text.toUpperCase()}
+              </span>
+            </div>
+          )}
+
+          {/* Perspective Highway Viewport */}
+          <div className="relative flex-1 overflow-hidden" style={{ perspective: "460px" }}>
+            <div
+              className="mx-auto h-full w-[92%] max-w-[460px] border-x-2 border-[#7ce8ff]/45 bg-[#120f24]/65 shadow-[0_0_32px_rgba(124,232,255,0.16)]"
+              style={{ transform: "rotateX(36deg)", transformOrigin: "50% 88%" }}
+            >
+              {/* 3 Perspective Lanes + Key Light Beams */}
+              <div className="relative grid h-full grid-cols-3">
+                {([0, 1, 2] as const).map((lane) => {
+                  const pressed = pressedLanes[lane];
+                  const fx = laneFx?.lane === lane ? laneFx : null;
+                  const col = highwayColors[lane];
+                  return (
+                    <div key={lane} className="relative border-r border-white/15 last:border-r-0">
+                      {/* Full-lane light beam on key/pad press */}
+                      <div
+                        className="pointer-events-none absolute inset-0 transition-opacity duration-75"
+                        style={{
+                          opacity: pressed ? 0.42 : 0,
+                          background: `linear-gradient(180deg, transparent 5%, ${col} 92%)`,
+                        }}
+                      />
+                      {/* Judgment pad flash */}
+                      <div
+                        className="pointer-events-none absolute inset-x-1.5 h-5 -translate-y-1/2 rounded-md border transition-transform duration-75"
+                        style={{
+                          top: "86%",
+                          borderColor: pressed || fx ? col : "rgba(255,255,255,0.35)",
+                          backgroundColor: pressed ? `${col}77` : "rgba(255,255,255,0.08)",
+                          boxShadow: fx && fx.kind !== "miss" ? `0 0 20px ${col}` : undefined,
+                          transform: `translateY(-50%) scale(${pressed ? 1.06 : 1})`,
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+
+                {/* Luminous Crystal Judgment Line */}
+                <div
+                  className="pointer-events-none absolute inset-x-0 h-[3px] -translate-y-1/2 bg-gradient-to-r from-[#7ce8ff] via-white to-[#7ce8ff]"
+                  style={{ top: "86%", boxShadow: "0 0 14px rgba(124,232,255,0.85)" }}
+                />
+
+                {/* Wide Glowing Bar Notes rushing down highway */}
+                {phase === "playing" &&
+                  notes.map((n) => {
+                    if (n.status !== "pending") return null;
+                    const progress = 1 - (n.hitAtMs - elapsedMs) / TRAVEL_MS;
+                    if (progress < -0.04 || progress > 1.14) return null;
+                    const yPct = progress * 86;
+                    const leftPct = n.lane * 33.333 + 16.666;
+                    const col = highwayColors[n.lane];
+                    return (
+                      <div
+                        key={n.id}
+                        className="pointer-events-none absolute h-4 w-[26%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white"
+                        style={{
+                          left: `${leftPct}%`,
+                          top: `${yPct}%`,
+                          background: `linear-gradient(180deg, #ffffff 0%, ${col} 45%, ${col} 100%)`,
+                          boxShadow: `0 0 16px ${col}`,
+                        }}
+                      />
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+
+          {/* Start / Finish Stage Overlays */}
+          {phase === "ready" && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#120e24]/82 px-6 text-center">
+              <p className="font-display text-[26px] font-semibold italic text-white">Rooftop Synth Stage</p>
+              <p className="mt-1.5 max-w-[340px] text-[13px] text-[#cfd8ff]">
+                Hit glowing bars on the crystal line using <strong className="text-white">A / S / D</strong>,{" "}
+                <strong className="text-white">J / K / L</strong>, or tapping the stage pads below.
+              </p>
+              <button
+                type="button"
+                onClick={startRound}
+                className="press mt-5 rounded-2xl border-2 border-ink bg-mustard px-6 py-2.5 text-[14px] font-extrabold text-ink shadow"
+              >
+                Start 30s Chill Track
+              </button>
+            </div>
+          )}
+
+          {phase === "done" && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#120e24]/88 px-6 text-center">
+              <span className="rounded-full border border-mustard/60 bg-mustard/20 px-3 py-0.5 text-[11px] font-extrabold uppercase tracking-widest text-mustard">
+                Rank {rank} Clear
+              </span>
+              <p className="mt-2 font-display text-[28px] font-semibold italic text-white">Stage Clear!</p>
+              <p className="mt-1 text-[14px] font-bold text-[#cfe0ff]">
+                Score {score} · Max Combo {maxCombo}
+              </p>
+              <p className="mt-1 text-[12.5px] font-semibold text-[#7de0a6]">
+                +8 Energy · +{score >= 250 ? 3 : 2} Rooftop Tokens
+              </p>
+              <button
+                type="button"
+                onClick={startRound}
+                className="press mt-4 rounded-2xl border-2 border-ink bg-tomato px-5 py-2 text-[13.5px] font-extrabold text-paper"
+              >
+                Encore (Play Again)
+              </button>
+            </div>
+          )}
+
+          {/* Large Tactile Bottom Keycap Pads */}
+          <div className="relative z-20 grid h-[56px] shrink-0 grid-cols-3 gap-2 border-t border-white/15 bg-[#110d20] p-2">
+            {([0, 1, 2] as const).map((lane) => {
+              const down = pressedLanes[lane];
+              const col = highwayColors[lane];
+              return (
+                <button
+                  key={lane}
+                  type="button"
+                  onPointerDown={() => {
+                    setLanePressed(lane, true);
+                    tapLane(lane);
+                  }}
+                  onPointerUp={() => setLanePressed(lane, false)}
+                  onPointerLeave={() => setLanePressed(lane, false)}
+                  onPointerCancel={() => setLanePressed(lane, false)}
+                  style={down ? { backgroundColor: col, color: "#161229", boxShadow: `0 0 18px ${col}` } : undefined}
+                  className={cn(
+                    "flex items-center justify-center rounded-xl border border-white/20 text-[13px] font-extrabold tracking-wider transition-transform duration-75",
+                    down ? "scale-[0.95]" : "bg-white/10 text-white hover:bg-white/15",
+                  )}
+                >
+                  <span
+                    className="mr-2 inline-block h-3 w-3 rounded-full border border-black/30"
+                    style={{ backgroundColor: down ? "#161229" : col }}
+                  />
+                  {LANE_KEYS[lane]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <p className="pt-2.5 text-center text-[11.5px] font-semibold text-white/65">
+          Score 250+ (Rank B) for +3 Rooftop Tokens · Press Esc to exit
         </p>
       </div>
     </aside>
@@ -1282,7 +1260,7 @@ export function CapsuleMachinePanel({
       setRevealKey((k) => k + 1);
       sound.sparkle();
       pullTimerRef.current = null;
-    }, 520);
+    }, 1050);
   };
 
   const inspected = useMemo(

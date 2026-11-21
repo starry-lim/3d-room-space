@@ -62,6 +62,7 @@ export class SkyLightSystem {
   lampOn = true;
   fairyOn = false;
   candleOn = false;
+  rooftopFairyOn = true;
 
   private phase: SkyPhase = "dusk";
   private cur = cloneSky(SKIES.dusk);
@@ -97,6 +98,7 @@ export class SkyLightSystem {
 
   private lampLevel = 0;
   private fairyLevel = 0;
+  private rooftopFairyLevel = 1;
   private candleLevel = 0;
   private _restLevel = 0;
 
@@ -121,6 +123,10 @@ export class SkyLightSystem {
 
   get dark(): number {
     return this.cur.dark;
+  }
+
+  get rooftopFairy(): number {
+    return this.rooftopFairyLevel;
   }
 
   get restLevel(): number {
@@ -603,6 +609,7 @@ export class SkyLightSystem {
     const { refs } = this;
     this.lampLevel = approach(this.lampLevel, this.lampOn ? 1 : 0, 9, dt);
     this.fairyLevel = approach(this.fairyLevel, this.fairyOn ? 1 : 0, 5, dt);
+    this.rooftopFairyLevel = approach(this.rooftopFairyLevel, this.rooftopFairyOn ? 1 : 0, 5, dt);
     this.candleLevel = approach(this.candleLevel, this.candleOn ? 1 : 0, 7, dt);
     this._restLevel = approach(this._restLevel, resting ? 1 : 0, 2, dt);
 
@@ -614,9 +621,10 @@ export class SkyLightSystem {
       this.candleGlow.material.opacity = 0;
       this.fairyGlow.material.opacity = 0;
       refs.flame.visible = false;
-      this.fairy.intensity = (2.4 + 6.2 * dark) * (0.96 + 0.04 * Math.sin(t * 1.9));
+      this.fairy.intensity = this.rooftopFairyLevel * (2.4 + 6.2 * dark) * (0.96 + 0.04 * Math.sin(t * 1.9));
       this.candle.intensity = (1.4 + 3.8 * dark) * (0.93 + 0.07 * Math.sin(t * 3.1));
-      this.rooftopFairyGlow.material.opacity = (0.34 + 0.46 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1));
+      this.rooftopFairyGlow.material.opacity =
+        this.rooftopFairyLevel * (0.34 + 0.46 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1));
       this.rooftopLanternGlow.material.opacity = (0.28 + 0.44 * dark) * (0.92 + 0.08 * Math.sin(t * 3.1));
       return;
     }

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { AvatarConfig, TodoItem } from "../game/data";
+import { CONSTELLATIONS } from "../game/rooftopData";
 import { buildAvatar } from "./avatars";
 import { CatController, type CatSfx } from "./CatController";
 import { disposeObjectTree } from "./dispose";
@@ -58,8 +59,19 @@ export interface SceneCallbacks {
   onCatSfx?: (kind: CatSfx) => void;
   onMugSfx?: (kind: "sip" | "place") => void;
   onToySfx?: (kind: ToySfxKind) => void;
+  onStargazeHit?: (starIndex: number) => void;
   onReady?: () => void;
 }
+
+const TELESCOPE_EYE = new THREE.Vector3(-1.85, 1.55, -1.85);
+const CONSTELLATION_ANCHORS: Record<string, { yaw: number; pitch: number }> = {
+  sleeping_cat: { yaw: -0.65, pitch: 0.68 },
+  warm_mug: { yaw: -1.35, pitch: 0.64 },
+  paper_plane: { yaw: -2.15, pitch: 0.72 },
+  crescent_lamp: { yaw: 0.15, pitch: 0.7 },
+  bookstack: { yaw: 0.95, pitch: 0.64 },
+  little_sprout: { yaw: 1.75, pitch: 0.72 },
+};
 
 const META: Record<InteractId, { label: string; pop: number; secret?: boolean; anchor?: [number, number, number] }> = {
   timer: { label: "Set the timer", pop: 0.1 },
@@ -95,6 +107,7 @@ const META: Record<InteractId, { label: string; pop: number; secret?: boolean; a
   gameTable: { label: "Memory match", pop: 0.05, secret: true },
   rhythmBox: { label: "Lo-Fi rhythm", pop: 0.05, secret: true },
   gacha: { label: "Capsule machine", pop: 0.06, secret: true },
+  rooftopFairy: { label: "String lights", pop: 0, secret: true },
 };
 
 /* ================================================================== */
@@ -109,7 +122,10 @@ export class StudyScene {
   private rooftopRefs: RooftopRefs;
   private region: RegionId = "study";
   private gachaSpin = 0;
-  private gachaPullAnim = 0;
+  private gachaAnimActive = false;
+  private gachaAnimElapsed = 0;
+  private gachaBurstFired = false;
+  private gachaRevealSlot = new THREE.Group();
   private cardPulse = 0;
   private shelfStandees = new THREE.Group();
   private deskStandeeSlot = new THREE.Group();
@@ -117,6 +133,11 @@ export class StudyScene {
   private ownedKey = "";
   private deskKey: string | null = null;
   private companionKey: string | null = null;
+  private skyConstellation = new THREE.Group();
+  private stargazeId: string | null = null;
+  private stargazeStep = 0;
+  private stargazeStarPts: THREE.Vector3[] = [];
+  private stargazePulseSprite: THREE.Sprite | null = null;
   private fxGroup = new THREE.Group();
   private ro: ResizeObserver;
   private raf = 0;
@@ -200,9 +221,15 @@ export class StudyScene {
     rooftop.visible = false;
     this.rooftop = rooftop;
     this.rooftopRefs = rtRefs;
-    this.deskStandeeSlot.position.set(0.74, 0.79, -2.32);
-    this.deskStandeeSlot.rotation.y = -0.22;
+    this.deskStandeeSlot.position.set(-0.44, 0.79, -2.42);
+    this.deskStandeeSlot.rotation.y = 0.35;
     room.add(this.shelfStandees, this.deskStandeeSlot);
+    if (rtRefs.items.gacha) {
+      this.gachaRevealSlot.position.set(0, 0.06, 0.56);
+      this.gachaRevealSlot.visible = false;
+      rtRefs.items.gacha.add(this.gachaRevealSlot);
+    }
+    this.fxGroup.add(this.skyConstellation);
     this.scene.add(room, rooftop, this.fxGroup);
     room.updateMatrixWorld(true);
     rooftop.updateMatrixWorld(true);
@@ -274,6 +301,7 @@ export class StudyScene {
       onHoverChange: (label) => this.cb.onHover(label),
       onLockChange: (locked) => this.cb.onLockChange?.(locked),
       onMoveSfx: (kind, detail) => this.cb.onMoveSfx?.(kind, detail),
+      onStargazeClick: (nx, ny) => this.handleStargazeClick(nx, ny),
     });
 
     this.registerItems();
@@ -412,29 +440,174 @@ export class StudyScene {
 
   setFocusView(mode: FocusViewMode): void {
     this.player.setFocusView(mode);
+    if (mode !== "stargazing") {
+      this.setStargazeTarget(null, 0, false);
+    }
   }
 
-  triggerGachaPullAnim(accentHex?: string): void {
-    this.gachaSpin = 1;
-    this.gachaPullAnim = 1;
-    const drop = this.rooftopRefs.gachaDropBall;
-    if (drop) {
-      (drop.material as THREE.MeshStandardMaterial).color.set(accentHex ?? "#e4572e");
-      drop.visible = true;
+  setStargazeTarget(id: string | null, step: number, aimCamera = false): void {
+    this.stargazeId = id;
+    this.stargazeStep = step;
+    this.skyConstellation.traverse((o) => {
+      if ((o as THREE.Line).isLine) {
+        const line = o as THREE.Line;
+        line.geometry.dispose();
+        const mat = line.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat?.dispose();
+      } else if ((o as THREE.Sprite).isSprite) {
+        (o as THREE.Sprite).material.dispose();
+      }
+    });
+    this.skyConstellation.clear();
+    this.stargazeStarPts = [];
+    this.stargazePulseSprite = null;
+
+    if (!id) {
+      this.skyConstellation.visible = false;
+      return;
     }
-    const gachaRoot = this.rooftopRefs.items.gacha;
-    if (gachaRoot) {
-      const p = gachaRoot.getWorldPosition(this.tmpV2);
-      p.y += 0.9;
-      this.fxSys.emit("spark", p, 12, {
-        colors: [0xffd76a, 0xff8a65, 0xfff3d6],
-        spread: 0.9,
-        up: 1.25,
-        grav: 1.1,
-        size: 0.14,
-        life: 1.2,
+
+    const def = CONSTELLATIONS.find((c) => c.id === id);
+    if (!def) return;
+    const anchor = CONSTELLATION_ANCHORS[id] ?? { yaw: -0.65, pitch: 0.68 };
+    const radius = 58;
+    this.skyConstellation.visible = true;
+
+    for (const [u, v] of def.stars) {
+      const yaw = anchor.yaw - ((u - 50) / 100) * 0.42;
+      const pitch = anchor.pitch - ((v - 50) / 100) * 0.34;
+      const cp = Math.cos(pitch);
+      const wx = TELESCOPE_EYE.x + -Math.sin(yaw) * cp * radius;
+      const wy = TELESCOPE_EYE.y + Math.sin(pitch) * radius;
+      const wz = TELESCOPE_EYE.z + -Math.cos(yaw) * cp * radius;
+      this.stargazeStarPts.push(new THREE.Vector3(wx, wy, wz));
+    }
+
+    // Faint dashed-look guide outline in the sky
+    if (this.stargazeStarPts.length >= 2) {
+      const guideGeo = new THREE.BufferGeometry().setFromPoints(this.stargazeStarPts);
+      const guideMat = new THREE.LineBasicMaterial({
+        color: 0x9fb4ff,
+        transparent: true,
+        opacity: 0.35,
+        toneMapped: false,
       });
+      this.skyConstellation.add(new THREE.Line(guideGeo, guideMat));
     }
+
+    // Bright golden connected segments
+    const litCount = Math.min(this.stargazeStarPts.length, Math.max(0, step));
+    if (litCount >= 2) {
+      const litGeo = new THREE.BufferGeometry().setFromPoints(this.stargazeStarPts.slice(0, litCount));
+      const litMat = new THREE.LineBasicMaterial({
+        color: 0xf6c95d,
+        transparent: true,
+        opacity: 0.95,
+        toneMapped: false,
+      });
+      this.skyConstellation.add(new THREE.Line(litGeo, litMat));
+    }
+
+    if (def.extraEdges) {
+      const done = step >= def.stars.length;
+      for (const [a, b] of def.extraEdges) {
+        const show = done || (step > a && step > b);
+        const exGeo = new THREE.BufferGeometry().setFromPoints([this.stargazeStarPts[a], this.stargazeStarPts[b]]);
+        const exMat = new THREE.LineBasicMaterial({
+          color: show ? 0xf6c95d : 0x9fb4ff,
+          transparent: true,
+          opacity: show ? 0.95 : 0.25,
+          toneMapped: false,
+        });
+        this.skyConstellation.add(new THREE.Line(exGeo, exMat));
+      }
+    }
+
+    // Star glow sprites fixed in the 3D sky dome
+    this.stargazeStarPts.forEach((pt, idx) => {
+      const isLit = idx < step;
+      const isNext = idx === step && step < def.stars.length;
+      const mat = new THREE.SpriteMaterial({
+        map: this.fxSys.glowTex,
+        color: isLit ? 0xffe07d : isNext ? 0xffffff : 0xcce0ff,
+        transparent: true,
+        opacity: isLit || isNext ? 0.98 : 0.72,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      });
+      const sp = new THREE.Sprite(mat);
+      sp.position.copy(pt);
+      sp.scale.setScalar(isNext ? 4.2 : isLit ? 3.5 : 2.7);
+      sp.renderOrder = 2;
+      this.skyConstellation.add(sp);
+
+      if (isNext) {
+        const pMat = new THREE.SpriteMaterial({
+          map: this.fxSys.glowTex,
+          color: 0xffc94a,
+          transparent: true,
+          opacity: 0.65,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          toneMapped: false,
+        });
+        const pulse = new THREE.Sprite(pMat);
+        pulse.position.copy(pt);
+        pulse.scale.setScalar(6.5);
+        pulse.renderOrder = 2;
+        this.skyConstellation.add(pulse);
+        this.stargazePulseSprite = pulse;
+      }
+    });
+
+    if (aimCamera) {
+      this.player.aimTelescope(anchor.yaw, anchor.pitch);
+    }
+  }
+
+  private handleStargazeClick(ndcX: number, ndcY: number): void {
+    if (!this.stargazeId || this.stargazeStep >= this.stargazeStarPts.length) return;
+    const target = this.stargazeStarPts[this.stargazeStep];
+    const proj = this.tmpV2.copy(target).project(this.camera);
+    if (proj.z >= 1) return;
+    if (Math.hypot(proj.x - ndcX, proj.y - ndcY) <= 0.13) {
+      this.cb.onStargazeHit?.(this.stargazeStep);
+    }
+  }
+
+  private disposeStandeeChildren(g: THREE.Group): void {
+    g.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) {
+        const mesh = o as THREE.Mesh;
+        mesh.geometry.dispose();
+        const mat = mesh.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat?.dispose();
+      }
+    });
+    g.clear();
+  }
+
+  triggerGachaPullAnim(trinketId: string, accentHex?: string): void {
+    this.gachaSpin = 0;
+    this.gachaAnimActive = true;
+    this.gachaAnimElapsed = 0;
+    this.gachaBurstFired = false;
+    const drop = this.rooftopRefs.gachaDrop;
+    if (drop) {
+      (drop.topHalf.material as THREE.MeshStandardMaterial).color.set(accentHex ?? "#e4572e");
+      drop.topHalf.position.set(0, 0, 0);
+      drop.topHalf.rotation.set(0, 0, 0);
+      drop.root.position.set(0, 0.19, 0.26);
+      drop.root.visible = false;
+    }
+    this.disposeStandeeChildren(this.gachaRevealSlot);
+    this.gachaRevealSlot.add(buildAcrylicStandee(trinketId, 0.85));
+    this.gachaRevealSlot.position.set(0, 0.06, 0.56);
+    this.gachaRevealSlot.rotation.set(0, 0, 0);
+    this.gachaRevealSlot.visible = false;
   }
 
   pulseTableCards(matched = false): void {
@@ -442,38 +615,25 @@ export class StudyScene {
   }
 
   syncTrinkets(ownedIds: string[], deskId: string | null, companionId: string | null): void {
-    const clearStandeeGroup = (g: THREE.Group) => {
-      g.traverse((o) => {
-        if ((o as THREE.Mesh).isMesh) {
-          const mesh = o as THREE.Mesh;
-          mesh.geometry.dispose();
-          const mat = mesh.material;
-          if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-          else mat?.dispose();
-        }
-      });
-      g.clear();
-    };
-
     const nextOwnedKey = ownedIds.join(",");
     if (nextOwnedKey !== this.ownedKey) {
       this.ownedKey = nextOwnedKey;
-      clearStandeeGroup(this.shelfStandees);
+      this.disposeStandeeChildren(this.shelfStandees);
       ownedIds.slice(0, 12).forEach((id, i) => {
         const row = i < 6 ? 0 : 1;
         const col = i % 6;
         const s = buildAcrylicStandee(id, row === 0 ? 0.68 : 0.72);
-        // Upper-right open shelf (y = 1.70) & bookshelf top right (y = 2.30)
-        s.position.set(2.24 + col * 0.105, row === 0 ? 1.7 : 2.3, -2.68);
+        // Upper-right open shelf (y = 1.70) & lower open shelf (y = 0.08) for crouching view
+        s.position.set(2.24 + col * 0.105, row === 0 ? 1.7 : 0.08, row === 0 ? -2.68 : -2.62);
         this.shelfStandees.add(s);
       });
     }
 
     if (deskId !== this.deskKey) {
       this.deskKey = deskId;
-      clearStandeeGroup(this.deskStandeeSlot);
+      this.disposeStandeeChildren(this.deskStandeeSlot);
       if (deskId && ownedIds.includes(deskId)) {
-        this.deskStandeeSlot.add(buildAcrylicStandee(deskId, 0.92));
+        this.deskStandeeSlot.add(buildAcrylicStandee(deskId, 1.05));
       }
     }
 
@@ -481,7 +641,7 @@ export class StudyScene {
       this.companionKey = companionId;
       if (this.companionStandee) {
         this.companionStandee.parent?.remove(this.companionStandee);
-        clearStandeeGroup(this.companionStandee);
+        this.disposeStandeeChildren(this.companionStandee);
         this.companionStandee = null;
       }
       if (companionId && ownedIds.includes(companionId)) {
@@ -867,6 +1027,10 @@ export class StudyScene {
       case "gacha":
         this.gachaSpin = 1;
         break;
+      case "rooftopFairy":
+        this.skyLight.rooftopFairyOn = !this.skyLight.rooftopFairyOn;
+        e.on = this.skyLight.rooftopFairyOn;
+        break;
       case "timer":
       case "bed":
       case "study":
@@ -953,7 +1117,8 @@ export class StudyScene {
         comp.position.x = approach(comp.position.x, tx, 4.5, dt);
         comp.position.z = approach(comp.position.z, tz, 4.5, dt);
       }
-      const ty = this.player.playerPos.y + 0.94 + Math.sin(t * 2.4) * 0.05;
+      const baseH = 0.94 - this.player.crouchK * 0.62;
+      const ty = this.player.playerPos.y + baseH + Math.sin(t * 2.4) * 0.04;
       comp.position.y = approach(comp.position.y, ty, 8, dt);
       comp.visible = !this.player.resting;
       comp.lookAt(this.camera.position.x, comp.position.y, this.camera.position.z);
@@ -962,9 +1127,16 @@ export class StudyScene {
     if (this.region === "rooftop") {
       const bulbs = this.rooftopRefs.fairyBulbs;
       const darkBoost = 0.88 + 0.62 * this.skyLight.dark;
+      const level = this.skyLight.rooftopFairy;
+      this.tmpV2.set(0.27, 0.24, 0.31); // muted unlit bulb tint
       for (let i = 0; i < bulbs.count; i++) {
         const tw = 0.78 + 0.22 * Math.sin(t * 2.2 + i * 1.4);
         this.tmpC.copy(this.rooftopRefs.fairyColors[i]).multiplyScalar(tw * darkBoost);
+        this.tmpC.setRGB(
+          this.tmpV2.x + (this.tmpC.r - this.tmpV2.x) * level,
+          this.tmpV2.y + (this.tmpC.g - this.tmpV2.y) * level,
+          this.tmpV2.z + (this.tmpC.b - this.tmpV2.z) * level,
+        );
         bulbs.setColorAt(i, this.tmpC);
       }
       if (bulbs.instanceColor) bulbs.instanceColor.needsUpdate = true;
@@ -975,19 +1147,77 @@ export class StudyScene {
         this.gachaSpin = Math.max(0, this.gachaSpin - dt * 1.6);
         this.rooftopRefs.gachaKnob.rotation.z = Math.sin(this.gachaSpin * Math.PI) * Math.PI * 2;
       }
-      if (this.gachaPullAnim > 0) {
-        this.gachaPullAnim = Math.max(0, this.gachaPullAnim - dt * 1.15);
-        const shake = this.gachaPullAnim;
-        this.rooftopRefs.gachaCapsules.forEach((cap, idx) => {
-          const baseY = (cap.userData.baseY as number | undefined) ?? cap.position.y;
-          cap.position.y = baseY + Math.sin(t * 28 + idx * 1.3) * 0.018 * shake;
-        });
-        const drop = this.rooftopRefs.gachaDropBall;
-        if (drop) {
-          const prog = 1 - this.gachaPullAnim;
-          drop.position.set(0, 0.19 + Math.abs(Math.sin(prog * Math.PI * 2.5)) * 0.065 * shake, 0.26 + prog * 0.11);
-          if (this.gachaPullAnim <= 0.01) drop.visible = false;
+      if (this.gachaAnimActive) {
+        this.gachaAnimElapsed += dt;
+        const e = this.gachaAnimElapsed;
+        const gachaRoot = this.rooftopRefs.items.gacha;
+        const drop = this.rooftopRefs.gachaDrop;
+
+        if (e < 0.55) {
+          // Stage 1: crank winds 360°, machine squashes & capsules swirl inside dome
+          const u = e / 0.55;
+          this.rooftopRefs.gachaKnob.rotation.z = -u * Math.PI * 2;
+          const sq = Math.sin(u * Math.PI * 2);
+          if (gachaRoot) gachaRoot.scale.set(1 + sq * 0.04, 1 - sq * 0.055, 1 + sq * 0.04);
+          this.rooftopRefs.gachaCapsules.forEach((cap, idx) => {
+            const baseY = (cap.userData.baseY as number | undefined) ?? cap.position.y;
+            cap.position.y = baseY + Math.sin(t * 28 + idx * 1.3) * 0.022;
+          });
+        } else if (e < 1.05) {
+          // Stage 2: two-tone capsule rolls out of chute & bounces onto deck
+          const u = (e - 0.55) / 0.5;
+          if (gachaRoot) gachaRoot.scale.setScalar(1);
+          this.rooftopRefs.gachaCapsules.forEach((cap) => {
+            const baseY = (cap.userData.baseY as number | undefined) ?? cap.position.y;
+            cap.position.y = baseY;
+          });
+          if (drop) {
+            drop.root.visible = true;
+            drop.root.position.set(0, 0.065 + Math.abs(Math.sin(u * Math.PI * 2)) * 0.1 * (1 - u * 0.5), 0.26 + u * 0.3);
+            drop.root.rotation.x = u * Math.PI * 2;
+          }
+        } else if (e < 2.8) {
+          // Stage 3: capsule splits open + golden sparkle burst + standee rises out spinning
+          const u = (e - 1.05) / 1.75;
+          const pop = Math.min(1, u * 3.5);
+          if (drop) {
+            drop.root.visible = true;
+            drop.root.position.set(0, 0.065, 0.56);
+            drop.root.rotation.x = 0;
+            drop.topHalf.position.set(0, pop * 0.085, -pop * 0.04);
+            drop.topHalf.rotation.x = -pop * 0.95;
+          }
+          if (!this.gachaBurstFired) {
+            this.gachaBurstFired = true;
+            if (drop) {
+              const p = drop.root.getWorldPosition(this.tmpV2);
+              p.y += 0.1;
+              this.fxSys.emit("spark", p, 18, {
+                colors: [0xffd76a, 0xff8a65, 0xfff3d6],
+                spread: 1.05,
+                up: 1.4,
+                grav: 1.15,
+                size: 0.14,
+                life: 1.35,
+              });
+            }
+          }
+          this.gachaRevealSlot.visible = true;
+          this.gachaRevealSlot.position.set(0, 0.08 + Math.min(1, u * 2.2) * 0.32 + Math.sin(u * 6) * 0.015, 0.56);
+          this.gachaRevealSlot.rotation.y = u * Math.PI * 1.4;
+          const s = Math.min(1, u * 4);
+          this.gachaRevealSlot.scale.setScalar(0.3 + s * 0.7);
+        } else {
+          // Reset cleanly after reveal
+          this.gachaAnimActive = false;
+          if (drop) drop.root.visible = false;
+          this.gachaRevealSlot.visible = false;
+          this.disposeStandeeChildren(this.gachaRevealSlot);
         }
+      }
+      if (this.stargazePulseSprite) {
+        const s = 5.4 + Math.sin(t * 4.5) * 1.4;
+        this.stargazePulseSprite.scale.setScalar(s);
       }
       if (this.cardPulse > 0) {
         this.cardPulse = Math.max(0, this.cardPulse - dt * 2.2);
