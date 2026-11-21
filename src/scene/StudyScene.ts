@@ -110,6 +110,8 @@ const smooth = (a: number, b: number, x: number) => {
 /** Frame-rate independent approach toward a target. */
 const approach = (cur: number, target: number, rate: number, dt: number) =>
   cur + (target - cur) * (1 - Math.exp(-rate * dt));
+const approachAngle = (cur: number, target: number, rate: number, dt: number) =>
+  cur + angleDelta(cur, target) * (1 - Math.exp(-rate * dt));
 
 interface Tween {
   t: number;
