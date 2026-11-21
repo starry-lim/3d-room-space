@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { AvatarConfig, TodoItem } from "../game/data";
-import { CONSTELLATIONS, type MemoryCardDef } from "../game/rooftopData";
+import { CONSTELLATIONS, getConstellationGraph, type MemoryCardDef } from "../game/rooftopData";
 import { buildAvatar } from "./avatars";
 import { CatController, type CatSfx } from "./CatController";
 import { disposeObjectTree } from "./dispose";
@@ -67,10 +67,19 @@ export interface SceneCallbacks {
   onCatSfx?: (kind: CatSfx) => void;
   onMugSfx?: (kind: "sip" | "place") => void;
   onToySfx?: (kind: ToySfxKind) => void;
-  onStargazeHit?: (starIndex: number) => void;
   onStargazeAim?: (aligned: boolean) => void;
+  onStargazeProgress?: (progress: { drawn: number; total: number } | null) => void;
+  onStargazeStep?: (kind: "connect" | "anchor" | "wrong") => void;
+  onConstellationUnlock?: (id: string) => void;
   onMemoryCardClick?: (index: number) => void;
   onReady?: () => void;
+}
+
+interface SkyConstellationData {
+  id: string;
+  pts: THREE.Vector3[];
+  edges: [number, number][];
+  edgeKeys: Set<string>;
 }
 
 const TELESCOPE_EYE = new THREE.Vector3(-1.85, 1.55, -1.85);
@@ -143,12 +152,20 @@ export class StudyScene {
   private ownedKey = "";
   private deskKey: string | null = null;
   private companionKey: string | null = null;
-  private skyConstellation = new THREE.Group();
-  private stargazeId: string | null = null;
-  private stargazeStep = 0;
-  private stargazeStarPts: THREE.Vector3[] = [];
-  private stargazePulseSprite: THREE.Sprite | null = null;
-  private stargazeAligned = false;
+  private skyConstellations = new THREE.Group();
+  private skyGraphData: SkyConstellationData[] = [];
+  private skyStarMaterials: { mat: THREE.SpriteMaterial | THREE.LineBasicMaterial; baseOpacity: number }[] = [];
+  private completedConstellations = new Set<string>();
+  private activeConstellationId: string | null = null;
+  private activeAnchorIdx: number | null = null;
+  private activeEdges = new Set<string>();
+  private wrongFlashTimer = 0;
+  private stargazeMode = false;
+  private stargazeAimed = false;
+  private meteorGroup = new THREE.Group();
+  private meteorTimer = 0;
+  private meteorSpawnAcc = 0;
+  private meteors: { line: THREE.Line; pos: THREE.Vector3; vel: THREE.Vector3; life: number; maxLife: number }[] = [];
   private memoryBoard = new THREE.Group();
   private memoryDealKey = "";
   private memoryCardMeshes: { group: THREE.Group; flip: number; targetFlip: number; matched: boolean; pop: number }[] = [];
@@ -250,7 +267,8 @@ export class StudyScene {
       this.memoryBoard.visible = false;
       rtRefs.items.gameTable.add(this.memoryBoard);
     }
-    this.fxGroup.add(this.skyConstellation);
+    this.initSkyGraphData();
+    rooftop.add(this.skyConstellations, this.meteorGroup);
     this.scene.add(room, rooftop, this.fxGroup);
     room.updateMatrixWorld(true);
     rooftop.updateMatrixWorld(true);
@@ -266,6 +284,7 @@ export class StudyScene {
       this.pixelRatio,
       this.rand,
     );
+    this.rebuildSkyConstellations();
     this.toys = new CatToySystem(refs, (kind) => this.cb.onToySfx?.(kind));
     this.avatarAct = new AvatarActivitySystem(refs);
 
@@ -462,15 +481,71 @@ export class StudyScene {
 
   setFocusView(mode: FocusViewMode): void {
     this.player.setFocusView(mode);
-    if (mode !== "stargazing") {
-      this.setStargazeTarget(null, 0, false);
+    const active = mode === "stargazing";
+    if (active === this.stargazeMode) return;
+    this.stargazeMode = active;
+    if (!active) {
+      this.activeConstellationId = null;
+      this.activeAnchorIdx = null;
+      this.activeEdges.clear();
+      this.wrongFlashTimer = 0;
+      this.rebuildSkyConstellations();
+      this.cb.onStargazeProgress?.(null);
+      if (this.stargazeAimed) {
+        this.stargazeAimed = false;
+        this.cb.onStargazeAim?.(false);
+      }
     }
   }
 
-  setStargazeTarget(id: string | null, step: number, aimCamera = false): void {
-    this.stargazeId = id;
-    this.stargazeStep = step;
-    this.skyConstellation.traverse((o) => {
+  /** Syncs unlocked constellation IDs so charted constellations always shine permanently in the rooftop sky. */
+  syncConstellations(completedIds: string[]): void {
+    this.completedConstellations = new Set(completedIds);
+    this.rebuildSkyConstellations();
+  }
+
+  /** Clears the current incomplete constellation strokes so the player can redraw from scratch. */
+  resetActiveConstellation(): void {
+    this.activeConstellationId = null;
+    this.activeAnchorIdx = null;
+    this.activeEdges.clear();
+    this.wrongFlashTimer = 0;
+    this.rebuildSkyConstellations();
+    this.cb.onStargazeProgress?.(null);
+  }
+
+  /** Launches a celebratory golden shooting-star shower across the rooftop sky dome. */
+  triggerMeteorShower(): void {
+    this.meteorTimer = 6.5;
+    this.meteorSpawnAcc = 0;
+  }
+
+  private initSkyGraphData(): void {
+    const radius = 58;
+    this.skyGraphData = CONSTELLATIONS.map((def) => {
+      const anchor = CONSTELLATION_ANCHORS[def.id] ?? { yaw: -0.65, pitch: 0.68 };
+      const graph = getConstellationGraph(def);
+      const pts = graph.stars.map(([u, v]) => {
+        const yaw = anchor.yaw - ((u - 50) / 100) * 0.42;
+        const pitch = anchor.pitch - ((v - 50) / 100) * 0.34;
+        const cp = Math.cos(pitch);
+        return new THREE.Vector3(
+          TELESCOPE_EYE.x + -Math.sin(yaw) * cp * radius,
+          TELESCOPE_EYE.y + Math.sin(pitch) * radius,
+          TELESCOPE_EYE.z + -Math.cos(yaw) * cp * radius,
+        );
+      });
+      return {
+        id: def.id,
+        pts,
+        edges: graph.edges,
+        edgeKeys: new Set(graph.edges.map(([a, b]) => `${a}-${b}`)),
+      };
+    });
+  }
+
+  private disposeSkyConstellations(): void {
+    this.skyConstellations.traverse((o) => {
       if ((o as THREE.Line).isLine) {
         const line = o as THREE.Line;
         line.geometry.dispose();
@@ -481,135 +556,169 @@ export class StudyScene {
         (o as THREE.Sprite).material.dispose();
       }
     });
-    this.skyConstellation.clear();
-    this.stargazeStarPts = [];
-    this.stargazePulseSprite = null;
+    this.skyConstellations.clear();
+    this.skyStarMaterials = [];
+  }
 
-    if (!id) {
-      this.skyConstellation.visible = false;
-      if (this.stargazeAligned) {
-        this.stargazeAligned = false;
-        this.cb.onStargazeAim?.(false);
-      }
-      return;
-    }
+  private rebuildSkyConstellations(): void {
+    this.disposeSkyConstellations();
+    const skyVisibility = 0.22 + 0.78 * this.skyLight.dark;
 
-    const def = CONSTELLATIONS.find((c) => c.id === id);
-    if (!def) return;
-    const anchor = CONSTELLATION_ANCHORS[id] ?? { yaw: -0.65, pitch: 0.68 };
-    const radius = 58;
-    this.skyConstellation.visible = true;
-
-    for (const [u, v] of def.stars) {
-      const yaw = anchor.yaw - ((u - 50) / 100) * 0.42;
-      const pitch = anchor.pitch - ((v - 50) / 100) * 0.34;
-      const cp = Math.cos(pitch);
-      const wx = TELESCOPE_EYE.x + -Math.sin(yaw) * cp * radius;
-      const wy = TELESCOPE_EYE.y + Math.sin(pitch) * radius;
-      const wz = TELESCOPE_EYE.z + -Math.cos(yaw) * cp * radius;
-      this.stargazeStarPts.push(new THREE.Vector3(wx, wy, wz));
-    }
-
-    // Faint dashed-look guide outline in the sky
-    if (this.stargazeStarPts.length >= 2) {
-      const guideGeo = new THREE.BufferGeometry().setFromPoints(this.stargazeStarPts);
-      const guideMat = new THREE.LineBasicMaterial({
-        color: 0x9fb4ff,
+    const addLine = (a: THREE.Vector3, b: THREE.Vector3, color: number, baseOpacity: number) => {
+      const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+      const mat = new THREE.LineBasicMaterial({
+        color,
         transparent: true,
-        opacity: 0.35,
+        opacity: baseOpacity * skyVisibility,
         toneMapped: false,
       });
-      this.skyConstellation.add(new THREE.Line(guideGeo, guideMat));
-    }
+      this.skyConstellations.add(new THREE.Line(geo, mat));
+      this.skyStarMaterials.push({ mat, baseOpacity });
+    };
 
-    // Bright golden connected segments
-    const litCount = Math.min(this.stargazeStarPts.length, Math.max(0, step));
-    if (litCount >= 2) {
-      const litGeo = new THREE.BufferGeometry().setFromPoints(this.stargazeStarPts.slice(0, litCount));
-      const litMat = new THREE.LineBasicMaterial({
-        color: 0xf6c95d,
-        transparent: true,
-        opacity: 0.95,
-        toneMapped: false,
-      });
-      this.skyConstellation.add(new THREE.Line(litGeo, litMat));
-    }
-
-    if (def.extraEdges) {
-      const done = step >= def.stars.length;
-      for (const [a, b] of def.extraEdges) {
-        const show = done || (step > a && step > b);
-        const exGeo = new THREE.BufferGeometry().setFromPoints([this.stargazeStarPts[a], this.stargazeStarPts[b]]);
-        const exMat = new THREE.LineBasicMaterial({
-          color: show ? 0xf6c95d : 0x9fb4ff,
-          transparent: true,
-          opacity: show ? 0.95 : 0.25,
-          toneMapped: false,
-        });
-        this.skyConstellation.add(new THREE.Line(exGeo, exMat));
-      }
-    }
-
-    // Star glow sprites fixed in the 3D sky dome
-    this.stargazeStarPts.forEach((pt, idx) => {
-      const isLit = idx < step;
-      const isNext = idx === step && step < def.stars.length;
+    const addStar = (pos: THREE.Vector3, color: number, scale: number, baseOpacity: number) => {
       const mat = new THREE.SpriteMaterial({
         map: this.fxSys.glowTex,
-        color: isLit ? 0xffe07d : isNext ? 0xffffff : 0xcce0ff,
+        color,
         transparent: true,
-        opacity: isLit || isNext ? 0.98 : 0.72,
+        opacity: baseOpacity * skyVisibility,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         toneMapped: false,
       });
       const sp = new THREE.Sprite(mat);
-      sp.position.copy(pt);
-      sp.scale.setScalar(isNext ? 4.2 : isLit ? 3.5 : 2.7);
+      sp.position.copy(pos);
+      sp.scale.setScalar(scale);
       sp.renderOrder = 2;
-      this.skyConstellation.add(sp);
+      this.skyConstellations.add(sp);
+      this.skyStarMaterials.push({ mat, baseOpacity });
+    };
 
-      if (isNext) {
-        const pMat = new THREE.SpriteMaterial({
-          map: this.fxSys.glowTex,
-          color: 0xffc94a,
-          transparent: true,
-          opacity: 0.65,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          toneMapped: false,
-        });
-        const pulse = new THREE.Sprite(pMat);
-        pulse.position.copy(pt);
-        pulse.scale.setScalar(6.5);
-        pulse.renderOrder = 2;
-        this.skyConstellation.add(pulse);
-        this.stargazePulseSprite = pulse;
+    for (const c of this.skyGraphData) {
+      const completed = this.completedConstellations.has(c.id);
+      if (completed) {
+        for (const [a, b] of c.edges) {
+          addLine(c.pts[a], c.pts[b], 0xf6c95d, 0.9);
+        }
+        for (const pt of c.pts) {
+          addStar(pt, 0xffe07d, 3.4, 0.95);
+        }
+        continue;
       }
-    });
 
-    if (aimCamera) {
-      this.player.aimTelescope(anchor.yaw, anchor.pitch);
-    }
-    const aligned = this.isStargazeTargetAligned();
-    if (aligned !== this.stargazeAligned) {
-      this.stargazeAligned = aligned;
-      this.cb.onStargazeAim?.(aligned);
+      const isActive = this.activeConstellationId === c.id;
+      const connectedVerts = new Set<number>();
+      if (isActive) {
+        const lineColor = this.wrongFlashTimer > 0 ? 0xe4572e : 0xf6c95d;
+        for (const key of this.activeEdges) {
+          const [sa, sb] = key.split("-").map(Number);
+          connectedVerts.add(sa);
+          connectedVerts.add(sb);
+          addLine(c.pts[sa], c.pts[sb], lineColor, 0.95);
+        }
+      }
+
+      c.pts.forEach((pt, idx) => {
+        const isAnchor = isActive && idx === this.activeAnchorIdx;
+        const isConnected = isActive && connectedVerts.has(idx);
+        if (isAnchor) {
+          addStar(pt, 0xfff4bd, 4.1, 1.0);
+        } else if (isConnected) {
+          addStar(pt, 0xffe07d, 3.4, 0.98);
+        } else {
+          addStar(pt, 0xe6efff, 3.0, 0.88);
+        }
+      });
     }
   }
 
-  private isStargazeTargetAligned(): boolean {
-    if (!this.stargazeId || this.stargazeStep >= this.stargazeStarPts.length) return false;
+  private findAlignedSkyStar(): { cid: string; idx: number } | null {
+    if (!this.stargazeMode || this.wrongFlashTimer > 0) return null;
     this.camera.updateMatrixWorld();
-    const target = this.stargazeStarPts[this.stargazeStep];
-    const proj = this.tmpV2.copy(target).project(this.camera);
-    if (proj.z >= 1) return false;
-    return Math.hypot(proj.x * this.camera.aspect, proj.y) <= 0.075;
+    let best: { cid: string; idx: number } | null = null;
+    let bestDist = 0.075;
+    for (const c of this.skyGraphData) {
+      if (this.completedConstellations.has(c.id)) continue;
+      for (let i = 0; i < c.pts.length; i++) {
+        if (this.activeConstellationId === c.id && i === this.activeAnchorIdx) continue;
+        const proj = this.tmpV2.copy(c.pts[i]).project(this.camera);
+        if (proj.z >= 1) continue;
+        const d = Math.hypot(proj.x * this.camera.aspect, proj.y);
+        if (d <= bestDist) {
+          bestDist = d;
+          best = { cid: c.id, idx: i };
+        }
+      }
+    }
+    return best;
   }
 
   private handleStargazeClick(_ndcX: number, _ndcY: number): void {
-    if (this.isStargazeTargetAligned()) {
-      this.cb.onStargazeHit?.(this.stargazeStep);
+    const hit = this.findAlignedSkyStar();
+    if (!hit) return;
+    const data = this.skyGraphData.find((c) => c.id === hit.cid);
+    if (!data) return;
+
+    if (this.activeConstellationId !== hit.cid) {
+      this.activeConstellationId = hit.cid;
+      this.activeAnchorIdx = hit.idx;
+      this.activeEdges.clear();
+      this.rebuildSkyConstellations();
+      this.cb.onStargazeProgress?.({ drawn: 0, total: data.edges.length });
+      this.cb.onStargazeStep?.("connect");
+      return;
+    }
+
+    if (this.activeAnchorIdx === null || hit.idx === this.activeAnchorIdx) return;
+    const a = Math.min(this.activeAnchorIdx, hit.idx);
+    const b = Math.max(this.activeAnchorIdx, hit.idx);
+    const key = `${a}-${b}`;
+
+    if (this.activeEdges.has(key)) {
+      this.activeAnchorIdx = hit.idx;
+      this.rebuildSkyConstellations();
+      this.cb.onStargazeStep?.("anchor");
+      return;
+    }
+
+    this.activeEdges.add(key);
+    this.activeAnchorIdx = hit.idx;
+
+    if (this.activeEdges.size >= data.edges.length) {
+      const matched =
+        this.activeEdges.size === data.edgeKeys.size && [...data.edgeKeys].every((k) => this.activeEdges.has(k));
+      if (matched) {
+        this.completedConstellations.add(hit.cid);
+        this.activeConstellationId = null;
+        this.activeAnchorIdx = null;
+        this.activeEdges.clear();
+        this.rebuildSkyConstellations();
+        data.pts.forEach((pt) => {
+          this.fxSys.emit("spark", pt, 3, {
+            colors: [0xffd76a, 0xfff3c0, 0xffe07d],
+            spread: 1.6,
+            up: 0.4,
+            grav: 0.1,
+            size: 1.6,
+            life: 1.2,
+          });
+        });
+        this.cb.onStargazeProgress?.(null);
+        if (this.stargazeAimed) {
+          this.stargazeAimed = false;
+          this.cb.onStargazeAim?.(false);
+        }
+        this.cb.onConstellationUnlock?.(hit.cid);
+      } else {
+        this.wrongFlashTimer = 0.85;
+        this.rebuildSkyConstellations();
+        this.cb.onStargazeProgress?.({ drawn: this.activeEdges.size, total: data.edges.length });
+        this.cb.onStargazeStep?.("wrong");
+      }
+    } else {
+      this.rebuildSkyConstellations();
+      this.cb.onStargazeProgress?.({ drawn: this.activeEdges.size, total: data.edges.length });
+      this.cb.onStargazeStep?.("connect");
     }
   }
 
@@ -1377,15 +1486,76 @@ export class StudyScene {
           this.disposeStandeeChildren(this.gachaRevealSlot);
         }
       }
-      if (this.stargazePulseSprite) {
-        const s = 5.4 + Math.sin(t * 4.5) * 1.4;
-        this.stargazePulseSprite.scale.setScalar(s);
+      const skyVisibility = 0.22 + 0.78 * this.skyLight.dark;
+      for (const { mat, baseOpacity } of this.skyStarMaterials) {
+        mat.opacity = baseOpacity * skyVisibility;
       }
-      if (this.stargazeId) {
-        const aligned = this.isStargazeTargetAligned();
-        if (aligned !== this.stargazeAligned) {
-          this.stargazeAligned = aligned;
+      if (this.wrongFlashTimer > 0) {
+        this.wrongFlashTimer = Math.max(0, this.wrongFlashTimer - dt);
+        if (this.wrongFlashTimer === 0) {
+          this.activeConstellationId = null;
+          this.activeAnchorIdx = null;
+          this.activeEdges.clear();
+          this.rebuildSkyConstellations();
+          this.cb.onStargazeProgress?.(null);
+        }
+      }
+      if (this.stargazeMode) {
+        const aligned = this.findAlignedSkyStar() !== null;
+        if (aligned !== this.stargazeAimed) {
+          this.stargazeAimed = aligned;
           this.cb.onStargazeAim?.(aligned);
+        }
+      }
+      if (this.meteorTimer > 0 || this.meteors.length > 0) {
+        if (this.meteorTimer > 0) {
+          this.meteorTimer = Math.max(0, this.meteorTimer - dt);
+          this.meteorSpawnAcc -= dt;
+          if (this.meteorSpawnAcc <= 0) {
+            this.meteorSpawnAcc = 0.18 + this.rand() * 0.14;
+            const yaw = this.rand() * Math.PI * 2;
+            const pitch = 0.55 + this.rand() * 0.55;
+            const r = 68;
+            const pos = new THREE.Vector3(
+              -Math.sin(yaw) * Math.cos(pitch) * r,
+              Math.sin(pitch) * r,
+              -Math.cos(yaw) * Math.cos(pitch) * r,
+            );
+            const speed = 26 + this.rand() * 14;
+            const vel = new THREE.Vector3(
+              Math.cos(yaw) * speed * (this.rand() > 0.5 ? 1 : -1),
+              -(0.45 + this.rand() * 0.35) * speed,
+              -Math.sin(yaw) * speed * 0.4,
+            );
+            const tail = pos.clone().addScaledVector(vel, -0.14);
+            const geo = new THREE.BufferGeometry().setFromPoints([tail, pos]);
+            const mat = new THREE.LineBasicMaterial({
+              color: 0xfff0b8,
+              transparent: true,
+              opacity: 0.95,
+              toneMapped: false,
+            });
+            const line = new THREE.Line(geo, mat);
+            this.meteorGroup.add(line);
+            this.meteors.push({ line, pos, vel, life: 0, maxLife: 0.9 + this.rand() * 0.45 });
+          }
+        }
+        for (let i = this.meteors.length - 1; i >= 0; i--) {
+          const m = this.meteors[i];
+          m.life += dt;
+          if (m.life >= m.maxLife) {
+            this.meteorGroup.remove(m.line);
+            m.line.geometry.dispose();
+            (m.line.material as THREE.Material).dispose();
+            this.meteors.splice(i, 1);
+            continue;
+          }
+          m.pos.addScaledVector(m.vel, dt);
+          const posAttr = m.line.geometry.attributes.position as THREE.BufferAttribute;
+          posAttr.setXYZ(0, m.pos.x - m.vel.x * 0.16, m.pos.y - m.vel.y * 0.16, m.pos.z - m.vel.z * 0.16);
+          posAttr.setXYZ(1, m.pos.x, m.pos.y, m.pos.z);
+          posAttr.needsUpdate = true;
+          (m.line.material as THREE.LineBasicMaterial).opacity = Math.sin((m.life / m.maxLife) * Math.PI) * 0.95;
         }
       }
       if (this.cardPulse > 0) {

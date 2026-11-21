@@ -5,6 +5,7 @@ import {
   CONSTELLATIONS,
   MEMORY_CARDS,
   TRINKETS,
+  type ConstellationDef,
   type MemoryCardDef,
   type TrinketDef,
 } from "../game/rooftopData";
@@ -398,48 +399,57 @@ function renderFigureArt(id: string) {
 export function StargazingPanel({
   completedIds,
   tokens,
-  selectedIdx,
-  step,
-  finished,
   aimed,
-  onSelect,
+  progress,
+  wrongNotice,
+  justUnlocked,
+  onResetStroke,
+  onDismissUnlocked,
   onClose,
 }: {
   completedIds: string[];
   tokens: number;
-  selectedIdx: number;
-  step: number;
-  finished: boolean;
   aimed: boolean;
-  onSelect: (idx: number) => void;
+  progress: { drawn: number; total: number } | null;
+  wrongNotice: boolean;
+  justUnlocked: ConstellationDef | null;
+  onResetStroke: () => void;
+  onDismissUnlocked: () => void;
   onClose: () => void;
 }) {
-  const cur = CONSTELLATIONS[selectedIdx] ?? CONSTELLATIONS[0];
-  const totalStars = cur.stars.length;
-  const lockedOn = aimed && !finished;
+  const lockedOn = aimed && !wrongNotice;
 
   return (
     <aside
       role="dialog"
       aria-label="Rooftop Stargazing"
-      className="pointer-events-none flex h-full w-full max-w-[540px] flex-col items-center justify-between gap-2"
+      className="pointer-events-none flex h-full w-full max-w-[560px] flex-col items-center justify-end gap-2"
     >
       {/* Pure optical telescope eyepiece crosshair pinned at exact viewport center / NDC (0, 0) */}
       <div className="pointer-events-none fixed inset-0 grid place-items-center">
         <div
           className={cn(
-            "relative grid h-[min(52vh,380px)] w-[min(52vh,380px)] place-items-center rounded-full border-2 shadow-[0_0_0_9999px_rgba(14,11,26,0.28)] transition-colors duration-150",
-            lockedOn ? "border-[#ffe799]" : "border-mustard/55",
+            "relative grid h-[min(56vh,410px)] w-[min(56vh,410px)] place-items-center rounded-full border-2 shadow-[0_0_0_9999px_rgba(14,11,26,0.28)] transition-colors duration-150",
+            wrongNotice ? "border-tomato" : lockedOn ? "border-[#ffe799]" : "border-mustard/55",
           )}
         >
           <div className="h-[88%] w-[88%] rounded-full border border-dashed border-[#ffe799]/25" />
           <div
             className={cn(
               "absolute h-7 w-7 rounded-full border-2 transition-all duration-150",
-              lockedOn ? "scale-110 border-[#ffe799] shadow-[0_0_12px_rgba(255,231,153,0.85)]" : "border-mustard/65",
+              wrongNotice
+                ? "scale-110 border-tomato"
+                : lockedOn
+                  ? "scale-110 border-[#ffe799] shadow-[0_0_12px_rgba(255,231,153,0.85)]"
+                  : "border-mustard/65",
             )}
           />
-          <div className={cn("absolute h-1.5 w-1.5 rounded-full transition-colors", lockedOn ? "bg-[#ffe799]" : "bg-mustard/80")} />
+          <div
+            className={cn(
+              "absolute h-1.5 w-1.5 rounded-full transition-colors",
+              wrongNotice ? "bg-tomato" : lockedOn ? "bg-[#ffe799]" : "bg-mustard/80",
+            )}
+          />
           {lockedOn && (
             <span className="absolute top-[calc(50%+22px)] rounded-full border border-ink bg-mustard px-2 py-0.5 text-[10px] font-extrabold text-ink">
               Aligned · Click
@@ -448,86 +458,83 @@ export function StargazingPanel({
         </div>
       </div>
 
-      {/* Top compact paper bar */}
-      <div className="paper anim-rise pointer-events-auto relative z-10 w-full rounded-[22px] px-4 py-3">
-        <header className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="font-display text-[22px] font-semibold italic leading-none">Stargazing</h2>
-            <p className="mt-1 text-[11.5px] font-semibold text-ink-soft">
-              Pan the telescope sky &amp; click glowing stars in order · {completedIds.length}/{CONSTELLATIONS.length} charted ·{" "}
-              {tokens} Tokens
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close stargazing"
-            onClick={onClose}
-            className="-mr-1 -mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
-          >
-            <Icon name="x" />
-          </button>
-        </header>
-
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {CONSTELLATIONS.map((c, idx) => {
-            const done = completedIds.includes(c.id);
-            const active = idx === selectedIdx;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  sound.click();
-                  onSelect(idx);
-                }}
-                className={cn(
-                  "rounded-full border-[1.5px] border-ink px-2.5 py-0.5 text-[11px] font-extrabold transition-colors",
-                  active
-                    ? "bg-mustard text-ink"
-                    : done
-                      ? "bg-sage/30 text-ink hover:bg-sage/45"
-                      : "bg-white/75 text-ink-soft hover:bg-paper-deep",
-                )}
-              >
-                {done ? "✓ " : ""}
-                {c.name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Bottom compact paper bar */}
-      <div className="paper anim-rise pointer-events-auto relative z-10 w-full rounded-[20px] px-4 py-2.5">
-        {finished ? (
+      {/* Bottom compact status / unlock bar — top sky stays 100% unobstructed */}
+      <div className="paper anim-rise pointer-events-auto relative z-10 mt-auto w-full rounded-[20px] px-4 py-2.5">
+        {justUnlocked ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="font-display text-[16.5px] font-semibold leading-tight">{cur.name}</p>
+                <p className="font-display text-[16.5px] font-semibold leading-tight">{justUnlocked.name}</p>
                 <span className="rounded-full border border-ink bg-mustard px-2 py-0.5 text-[10.5px] font-extrabold">
                   +6 Energy · +2 Tokens
                 </span>
+                {completedIds.length >= CONSTELLATIONS.length && (
+                  <span className="rounded-full border border-ink bg-tomato px-2 py-0.5 text-[10.5px] font-extrabold text-paper">
+                    All 6 Charted · Meteor Shower!
+                  </span>
+                )}
               </div>
-              <p className="mt-0.5 text-[11.5px] leading-snug text-ink-soft">{cur.note}</p>
+              <p className="mt-0.5 text-[11.5px] leading-snug text-ink-soft">{justUnlocked.note}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                sound.click();
-                onSelect((selectedIdx + 1) % CONSTELLATIONS.length);
-              }}
-              className="press shrink-0 rounded-xl border-[1.5px] border-ink bg-tomato px-3 py-1.5 text-[12px] font-extrabold text-paper"
-            >
-              Next Constellation
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  sound.click();
+                  onDismissUnlocked();
+                }}
+                className="press shrink-0 rounded-xl border-[1.5px] border-ink bg-mustard px-3 py-1.5 text-[12px] font-extrabold text-ink"
+              >
+                Continue
+              </button>
+              <button
+                type="button"
+                aria-label="Close stargazing"
+                onClick={onClose}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
+              >
+                <Icon name="x" />
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between gap-2 text-[12px] font-semibold text-ink-soft">
-            <span>
-              <strong className="text-ink">{cur.name}</strong> · Drag sky to align pulsing star with crosshair, then click ({step + 1}/
-              {totalStars})
-            </span>
-            <span>+6 Energy · +2 Tokens</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] font-semibold text-ink-soft">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-ink bg-mustard/65 px-2.5 py-0.5 text-[11px] font-extrabold text-ink">
+                {completedIds.length}/{CONSTELLATIONS.length} Charted · {tokens} Tokens
+              </span>
+              {wrongNotice ? (
+                <span className="font-extrabold text-tomato">Not quite that shape — try again!</span>
+              ) : progress ? (
+                <span className="text-ink">
+                  {progress.drawn}/{progress.total} lines connected
+                </span>
+              ) : (
+                <span>Scan the sky &amp; connect bright star clusters</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              {progress && progress.drawn > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.click();
+                    onResetStroke();
+                  }}
+                  className="rounded-full border-[1.5px] border-ink bg-white/80 px-2.5 py-0.5 text-[11px] font-extrabold text-ink hover:bg-paper-deep"
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Close stargazing"
+                onClick={onClose}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors hover:bg-paper-deep"
+              >
+                <Icon name="x" />
+              </button>
+            </div>
           </div>
         )}
       </div>

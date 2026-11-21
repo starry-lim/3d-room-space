@@ -62,6 +62,7 @@ export const CONSTELLATIONS: ConstellationDef[] = [
     note: "A golden cone of calm above a quiet desk.",
     stars: [
       [34, 78],
+      [48, 78],
       [62, 78],
       [48, 78],
       [40, 50],
@@ -99,6 +100,51 @@ export const CONSTELLATIONS: ConstellationDef[] = [
     ],
   },
 ];
+
+/** Deduplicates vertices and builds unique canonical undirected edges [a, b] (a < b) for a constellation. */
+export function getConstellationGraph(def: ConstellationDef): {
+  stars: [number, number][];
+  edges: [number, number][];
+} {
+  const stars: [number, number][] = [];
+  const indexMap: number[] = [];
+  const seenPos = new Map<string, number>();
+
+  for (const [u, v] of def.stars) {
+    const key = `${u},${v}`;
+    let idx = seenPos.get(key);
+    if (idx === undefined) {
+      idx = stars.length;
+      seenPos.set(key, idx);
+      stars.push([u, v]);
+    }
+    indexMap.push(idx);
+  }
+
+  const edgeSet = new Set<string>();
+  const edges: [number, number][] = [];
+  const addEdge = (a0: number, b0: number) => {
+    const a = Math.min(a0, b0);
+    const b = Math.max(a0, b0);
+    if (a === b) return;
+    const key = `${a}-${b}`;
+    if (!edgeSet.has(key)) {
+      edgeSet.add(key);
+      edges.push([a, b]);
+    }
+  };
+
+  for (let i = 0; i + 1 < def.stars.length; i++) {
+    addEdge(indexMap[i], indexMap[i + 1]);
+  }
+  if (def.extraEdges) {
+    for (const [a, b] of def.extraEdges) {
+      addEdge(indexMap[a], indexMap[b]);
+    }
+  }
+
+  return { stars, edges };
+}
 
 export interface MemoryCardDef {
   id: string;

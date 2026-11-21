@@ -81,10 +81,10 @@ export default function App() {
   const [panel, setPanel] = useState<PanelId | null>(null);
   const [region, setRegion] = useState<RegionId>("study");
   const [teleportFade, setTeleportFade] = useState(false);
-  const [stargazeIdx, setStargazeIdx] = useState(0);
-  const [stargazeStep, setStargazeStep] = useState(0);
-  const [stargazeDone, setStargazeDone] = useState(false);
   const [stargazeAimed, setStargazeAimed] = useState(false);
+  const [stargazeProgress, setStargazeProgress] = useState<{ drawn: number; total: number } | null>(null);
+  const [stargazeWrong, setStargazeWrong] = useState(false);
+  const [stargazeUnlocked, setStargazeUnlocked] = useState<ConstellationDef | null>(null);
   const [resting, setResting] = useState(false);
   const [activity, setActivity] = useState<ActivityMode>("none");
   const [poufReading, setPoufReading] = useState(false);
@@ -123,13 +123,8 @@ export default function App() {
   regionRef.current = region;
   const teleportingRef = useRef(false);
   const teleportTimersRef = useRef<number[]>([]);
-  const stargazeIdxRef = useRef(stargazeIdx);
-  stargazeIdxRef.current = stargazeIdx;
-  const stargazeStepRef = useRef(stargazeStep);
-  stargazeStepRef.current = stargazeStep;
-  const stargazeDoneRef = useRef(stargazeDone);
-  stargazeDoneRef.current = stargazeDone;
-  const stargazeAimPendingRef = useRef(false);
+  const stargazeStepCountRef = useRef(0);
+  const stargazeWrongTimerRef = useRef<number | null>(null);
   const memoryFlipRef = useRef<((idx: number) => void) | null>(null);
   const toastId = useRef(0);
   const page = useRef(0);
@@ -139,6 +134,10 @@ export default function App() {
     return () => {
       for (const id of teleportTimersRef.current) window.clearTimeout(id);
       teleportTimersRef.current = [];
+      if (stargazeWrongTimerRef.current !== null) {
+        window.clearTimeout(stargazeWrongTimerRef.current);
+        stargazeWrongTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -758,11 +757,9 @@ export default function App() {
         if (panel === "stargazing") {
           setPanel(null);
         } else {
-          const openIdx = CONSTELLATIONS.findIndex((c) => !saveRef.current.rooftop.constellations.includes(c.id));
-          setStargazeIdx(openIdx >= 0 ? openIdx : 0);
-          setStargazeStep(0);
-          setStargazeDone(false);
-          stargazeAimPendingRef.current = true;
+          setStargazeUnlocked(null);
+          setStargazeWrong(false);
+          setStargazeProgress(null);
           setPanel("stargazing");
         }
         break;
@@ -786,31 +783,60 @@ export default function App() {
   const interactRef = useRef(onInteract);
   interactRef.current = onInteract;
 
-  const selectConstellation = useCallback((idx: number) => {
-    setStargazeIdx(idx);
-    setStargazeStep(0);
-    setStargazeDone(false);
-    stargazeAimPendingRef.current = true;
-  }, []);
-
   const syncMemoryCards = useCallback((cards: MemoryCardView[] | null) => {
     sceneRef.current?.syncMemoryCards(cards);
   }, []);
 
-  const stargazeHitRef = useRef<() => void>(() => {});
-  stargazeHitRef.current = () => {
-    if (stargazeDoneRef.current) return;
-    const cur = CONSTELLATIONS[stargazeIdxRef.current] ?? CONSTELLATIONS[0];
-    const step = stargazeStepRef.current;
-    sound.rhythmNote((step % 3) as 0 | 1 | 2);
-    const next = step + 1;
-    if (next >= cur.stars.length) {
-      setStargazeStep(cur.stars.length);
-      setStargazeDone(true);
-      sound.sparkle();
-      completeConstellation(cur, !saveRef.current.rooftop.constellations.includes(cur.id));
+  const stargazeStepRef = useRef<(kind: "connect" | "anchor" | "wrong") => void>(() => {});
+  stargazeStepRef.current = (kind) => {
+    if (kind === "connect") {
+      const noteIdx = (stargazeStepCountRef.current++ % 3) as 0 | 1 | 2;
+      sound.rhythmNote(noteIdx);
+      setStargazeWrong(false);
+      setStargazeUnlocked(null);
+    } else if (kind === "anchor") {
+      sound.click();
     } else {
-      setStargazeStep(next);
+      sound.mugPlace();
+      setStargazeWrong(true);
+      if (stargazeWrongTimerRef.current !== null) window.clearTimeout(stargazeWrongTimerRef.current);
+      stargazeWrongTimerRef.current = window.setTimeout(() => {
+        setStargazeWrong(false);
+        stargazeWrongTimerRef.current = null;
+      }, 1600);
+    }
+  };
+
+  const constellationUnlockRef = useRef<(id: string) => void>(() => {});
+  constellationUnlockRef.current = (id) => {
+    const def = CONSTELLATIONS.find((c) => c.id === id);
+    if (!def) return;
+    sound.sparkle();
+    setStargazeWrong(false);
+    setStargazeUnlocked(def);
+    const existing = saveRef.current.rooftop.constellations;
+    const isFirstTime = !existing.includes(def.id);
+    const completedAllSix = isFirstTime && existing.length + 1 === CONSTELLATIONS.length;
+    completeConstellation(def, isFirstTime);
+    if (completedAllSix) {
+      setSave((s) => ({
+        ...s,
+        stars: s.stars + 1,
+        rooftop: {
+          ...s.rooftop,
+          tokens: s.rooftop.tokens + 5,
+        },
+      }));
+      sceneRef.current?.triggerMeteorShower();
+      pushToast(
+        {
+          tone: "secret",
+          tag: "All 6 Charted!",
+          title: "Meteor Shower Over the Rooftop",
+          body: "+1 Star · +5 Rooftop Tokens bonus!",
+        },
+        5500,
+      );
     }
   };
 
@@ -853,8 +879,10 @@ export default function App() {
             else if (kind === "box") sound.boxRustle();
           },
           onReady: () => setReady(true),
-          onStargazeHit: () => stargazeHitRef.current(),
           onStargazeAim: (aligned) => setStargazeAimed(aligned),
+          onStargazeProgress: (prog) => setStargazeProgress(prog),
+          onStargazeStep: (kind) => stargazeStepRef.current(kind),
+          onConstellationUnlock: (id) => constellationUnlockRef.current(id),
           onMemoryCardClick: (idx) => memoryFlipRef.current?.(idx),
         },
         touch,
@@ -908,17 +936,19 @@ export default function App() {
   }, [panel]);
 
   useEffect(() => {
-    if (!ready) return;
-    if (panel === "stargazing") {
-      const def = CONSTELLATIONS[stargazeIdx] ?? CONSTELLATIONS[0];
-      const aim = stargazeAimPendingRef.current;
-      stargazeAimPendingRef.current = false;
-      sceneRef.current?.setStargazeTarget(def.id, stargazeStep, aim);
-    } else {
-      sceneRef.current?.setStargazeTarget(null, 0, false);
+    if (panel !== "stargazing") {
       setStargazeAimed(false);
+      setStargazeProgress(null);
+      setStargazeWrong(false);
+      setStargazeUnlocked(null);
     }
-  }, [ready, panel, stargazeIdx, stargazeStep]);
+  }, [panel]);
+
+  useEffect(() => {
+    if (ready) {
+      sceneRef.current?.syncConstellations(save.rooftop.constellations);
+    }
+  }, [ready, save.rooftop.constellations]);
 
   useEffect(() => {
     if (ready) {
@@ -1229,11 +1259,15 @@ export default function App() {
               <StargazingPanel
                 completedIds={save.rooftop.constellations}
                 tokens={save.rooftop.tokens}
-                selectedIdx={stargazeIdx}
-                step={stargazeStep}
-                finished={stargazeDone}
                 aimed={stargazeAimed}
-                onSelect={selectConstellation}
+                progress={stargazeProgress}
+                wrongNotice={stargazeWrong}
+                justUnlocked={stargazeUnlocked}
+                onResetStroke={() => {
+                  setStargazeWrong(false);
+                  sceneRef.current?.resetActiveConstellation();
+                }}
+                onDismissUnlocked={() => setStargazeUnlocked(null)}
                 onClose={() => setPanel(null)}
               />
             </div>
