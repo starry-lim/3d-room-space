@@ -1,0 +1,244 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #2b2030;
+  --color-ink-soft: #655468;
+  --color-paper: #f7eedc;
+  --color-paper-deep: #ecdfc4;
+  --color-tomato: #e4572e;
+  --color-tomato-deep: #c2401c;
+  --color-sage: #7d9b76;
+  --color-sage-deep: #55744f;
+  --color-mustard: #e9b44c;
+  --color-night: #231a2b;
+
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-body: "Nunito", ui-rounded, "Segoe UI", system-ui, sans-serif;
+  --font-seal: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--color-night);
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Kept in Tailwind's base layer so utility classes on buttons still win. */
+@layer base {
+  button {
+    cursor: pointer;
+  }
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-mustard);
+  outline-offset: 2px;
+}
+
+@layer components {
+/* ------------------------------------------------------------------ */
+/* Paper UI: cream cards, ink outline, hard offset shadow              */
+/* ------------------------------------------------------------------ */
+
+.paper {
+  background-color: var(--color-paper);
+  background-image: radial-gradient(rgb(43 32 48 / 0.045) 1px, transparent 1.2px);
+  background-size: 7px 7px;
+  color: var(--color-ink);
+  border: 1.5px solid var(--color-ink);
+  box-shadow: 3px 3px 0 var(--color-ink);
+}
+
+.press {
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    background-color 0.15s ease;
+}
+@media (hover: hover) {
+  .press:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--color-ink);
+  }
+}
+.press:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--color-ink);
+}
+.press[aria-pressed="true"] {
+  background-color: var(--color-mustard);
+  background-image: none;
+}
+
+/* the 角落 name seal */
+.seal {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-seal);
+  font-weight: 900;
+  line-height: 1.02;
+  color: var(--color-paper);
+  background: var(--color-tomato);
+  border-radius: 5px;
+  box-shadow:
+    inset 0 0 0 1.5px var(--color-tomato),
+    inset 0 0 0 2.5px rgb(247 238 220 / 0.75);
+  transform: rotate(-4deg);
+}
+
+.kbd {
+  display: inline-block;
+  min-width: 3.4em;
+  padding: 1px 7px;
+  border: 1.5px solid var(--color-ink);
+  border-radius: 7px;
+  background: #fffaf0;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  box-shadow: 0 1.5px 0 var(--color-ink);
+}
+
+.scroll-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(43 32 48 / 0.35) transparent;
+}
+
+.radio-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 10px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-ink);
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+.radio-range:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.radio-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-ink);
+  background: var(--color-tomato);
+  box-shadow: 1.5px 1.5px 0 var(--color-ink);
+}
+.radio-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-ink);
+  background: var(--color-tomato);
+  box-shadow: 1.5px 1.5px 0 var(--color-ink);
+}
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) rotate(-1.5deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes stamp {
+  0% {
+    opacity: 0;
+    transform: scale(1.8) rotate(-14deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.94) rotate(-6deg);
+  }
+  100% {
+    transform: scale(1) rotate(-6deg);
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.anim-rise {
+  animation: rise-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+.anim-drop {
+  animation: drop-in 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.anim-slide {
+  animation: slide-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+}
+.anim-leave {
+  animation: fade-out 0.35s ease forwards;
+}
+.anim-stamp {
+  animation: stamp 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.anim-breathe {
+  animation: breathe 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise,
+  .anim-drop,
+  .anim-slide,
+  .anim-stamp,
+  .anim-breathe {
+    animation: none;
+  }
+  .press {
+    transition: none;
+  }
+}
