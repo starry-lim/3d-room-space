@@ -487,7 +487,7 @@ export class StudyScene {
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
   private down: { x: number; y: number; t: number; id: number } | null = null;
-  private pointers = 0;
+  private activePointers = new Set<number>();
   private hoverPos: { x: number; y: number } | null = null;
   private hoverDirty = false;
   private hovered: Item | null = null;
@@ -1022,6 +1022,7 @@ export class StudyScene {
     this.poufReading = mode === "pouf" && !!opts?.reading;
     this.exercisePaused = false;
     this.hoverDirty = true;
+    this.resetPointers();
 
     this.refs.studyBook.root.visible = mode === "desk";
     this.refs.studyBook.flipPage.rotation.z = 0;
@@ -1610,6 +1611,7 @@ export class StudyScene {
     if (next !== this.locked) {
       this.locked = next;
       this.hoverDirty = true;
+      this.resetPointers();
       this.renderer.domElement.style.cursor = next ? "none" : "crosshair";
       if (next) {
         (document.activeElement as HTMLElement | null)?.blur?.();
@@ -1620,12 +1622,19 @@ export class StudyScene {
     }
   };
 
-  private onBlur = () => {
-    this.keys.clear();
+  private resetPointers() {
+    this.activePointers.clear();
     this.dragging = false;
     this.dragStart = null;
-    this.pointers = 0;
     this.down = null;
+    if (!this.locked) {
+      this.renderer.domElement.style.cursor = this.hoveredLabel ? "pointer" : "crosshair";
+    }
+  }
+
+  private onBlur = () => {
+    this.keys.clear();
+    this.resetPointers();
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -1728,13 +1737,15 @@ export class StudyScene {
 
   private onDown = (e: PointerEvent) => {
     if (this.locked) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
     if (e.pointerType === "mouse" && e.button === 0 && !this.resting && this.activity === "none" && !this.uiOpen) {
       this.lockPointer();
       return;
     }
-    this.pointers++;
-    if (this.pointers === 1) {
+    if (e.pointerType === "mouse") this.activePointers.clear();
+    this.activePointers.add(e.pointerId);
+    if (this.activePointers.size === 1) {
       this.down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
       this.dragStart = {
         x: e.clientX,
@@ -1743,6 +1754,11 @@ export class StudyScene {
         pitch: this.activity !== "none" && this.thirdPerson ? this.tpPitch : this.pitch,
       };
       this.dragging = false;
+      try {
+        this.renderer.domElement.setPointerCapture(e.pointerId);
+      } catch {
+        /* synthetic or already released pointer */
+      }
     } else {
       this.down = null;
       this.dragStart = null;
@@ -1752,6 +1768,9 @@ export class StudyScene {
 
   private onMove = (e: PointerEvent) => {
     if (this.locked) return;
+    if (e.pointerType === "mouse" && (e.buttons & 1) === 0 && this.dragStart) {
+      this.resetPointers();
+    }
     if (this.dragStart && this.down && e.pointerId === this.down.id) {
       const dx = e.clientX - this.dragStart.x;
       const dy = e.clientY - this.dragStart.y;
@@ -1784,8 +1803,15 @@ export class StudyScene {
   };
 
   private onUp = (e: PointerEvent) => {
+    this.activePointers.delete(e.pointerId);
+    try {
+      if (this.renderer.domElement.hasPointerCapture(e.pointerId)) {
+        this.renderer.domElement.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      /* ignored */
+    }
     if (this.locked) return;
-    this.pointers = Math.max(0, this.pointers - 1);
     const d = this.down;
     const wasDrag = this.dragging;
     this.down = null;
@@ -1810,11 +1836,21 @@ export class StudyScene {
     this.tpDist = Math.max(1.35, Math.min(3.6, this.tpDist + e.deltaY * 0.0022));
   };
 
-  private onCancel = () => {
-    this.pointers = Math.max(0, this.pointers - 1);
+  private onCancel = (e: PointerEvent) => {
+    this.activePointers.delete(e.pointerId);
+    try {
+      if (this.renderer.domElement.hasPointerCapture(e.pointerId)) {
+        this.renderer.domElement.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      /* ignored */
+    }
     this.down = null;
     this.dragStart = null;
     this.dragging = false;
+    if (!this.locked) {
+      this.renderer.domElement.style.cursor = this.hoveredLabel ? "pointer" : "crosshair";
+    }
   };
 
   private onLeave = () => {
@@ -1869,7 +1905,7 @@ export class StudyScene {
     if (this.hoverPos && this.frame % 8 === 0) this.hoverDirty = true;
     if (!this.hoverDirty || this.frame % 2) return;
     this.hoverDirty = false;
-    const busy = this.pointers > 0 || !!this.camTween;
+    const busy = this.activePointers.size > 0 || !!this.camTween;
     const item = this.hoverPos && !busy ? this.pick(this.hoverPos.x, this.hoverPos.y) : null;
     const label = item ? this.labelFor(item) : null;
     if (item !== this.hovered || label !== this.hoveredLabel) {
