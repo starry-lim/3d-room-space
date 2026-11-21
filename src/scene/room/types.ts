@@ -29,7 +29,21 @@ export type InteractId =
   | "wand"
   | "scratcher"
   | "catBox"
-  | "laser";
+  | "laser"
+  | "ladder"
+  | "hatch"
+  | "telescope"
+  | "gameTable"
+  | "rhythmBox"
+  | "gacha";
+
+export interface RooftopRefs {
+  items: Partial<Record<InteractId, THREE.Object3D>>;
+  fairyBulbs: THREE.InstancedMesh;
+  fairyColors: THREE.Color[];
+  lanternGlows: THREE.MeshStandardMaterial[];
+  gachaKnob: THREE.Object3D;
+}
 
 export interface CatRig {
   root: THREE.Group;

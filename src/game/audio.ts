@@ -333,6 +333,15 @@ class Sound {
       this.tone(midi(m), 0.55, { type: "triangle", gain: 0.12, when: i * 0.09 }),
     );
   }
+  rhythmNote(lane: 0 | 1 | 2) {
+    const notes = [72, 76, 79] as const;
+    this.tone(midi(notes[lane]), 0.36, { type: "sine", gain: 0.11, attack: 0.008 });
+  }
+  gachaCrank() {
+    this.tone(360, 0.055, { type: "triangle", gain: 0.08, to: 440, attack: 0.003 });
+    this.tone(420, 0.055, { type: "triangle", gain: 0.08, to: 520, when: 0.14, attack: 0.003 });
+    this.tone(midi(76), 0.28, { type: "sine", gain: 0.1, when: 0.42, attack: 0.008 });
+  }
 
   /* -------------------------------- radio ------------------------------- */
 

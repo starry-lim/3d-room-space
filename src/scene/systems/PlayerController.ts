@@ -17,7 +17,6 @@ import {
   REST_PITCH,
   REST_POS,
   REST_YAW,
-  ROOM,
   RUN_SPEED,
   SPAWN_PITCH,
   SPAWN_POS,
@@ -28,6 +27,7 @@ import {
   WAKE_YAW,
   WALK_SPEED,
   type ActivityMode,
+  type Collider,
 } from "../layout";
 import { angleDelta, approach, approachAngle, ease, TweenList, type Tween } from "../math";
 import type { InteractId } from "../room/types";
@@ -122,7 +122,12 @@ export class PlayerController {
   private ndc = new THREE.Vector2();
   private tmpV = new THREE.Vector3();
 
+  private activeRoot: THREE.Group;
+  private bounds: { minX: number; maxX: number; minZ: number; maxZ: number } = PLAYER_BOUNDS;
+  private colliders: Collider[] = COLLIDERS;
+
   constructor(private deps: PlayerControllerDeps) {
+    this.activeRoot = deps.getRoom();
     this.applyCameraPose();
   }
 
@@ -334,7 +339,38 @@ export class PlayerController {
     }
   }
 
-  resetView(): void {
+  setRegion(
+    root: THREE.Group,
+    bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
+    colliders: Collider[],
+    spawnPos: THREE.Vector3,
+    spawnYaw: number,
+    spawnPitch: number,
+  ): void {
+    this.cancelCamTween();
+    this.unlockPointer();
+    this.keys.clear();
+    this.resetPointers();
+    this.crouched = false;
+    this.eyeHeight = EYE_STAND;
+    this.velY = 0;
+    this.grounded = true;
+    this.activeRoot = root;
+    this.bounds = bounds;
+    this.colliders = colliders;
+    this.playerPos.copy(spawnPos);
+    this.yaw = spawnYaw;
+    this.pitch = spawnPitch;
+    this.avatarYaw = spawnYaw;
+    const avRoot = this.deps.getAvatarRoot();
+    avRoot.position.copy(spawnPos);
+    avRoot.rotation.y = spawnYaw;
+    avRoot.visible = !this.resting && (this.thirdPerson || this.avatarPreview);
+    this.hoverDirty = true;
+    this.applyCameraPose();
+  }
+
+  resetView(spawnPos = SPAWN_POS, spawnYaw = SPAWN_YAW, spawnPitch = SPAWN_PITCH): void {
     if (this.resting) return;
     if (this.activity !== "none") {
       const spec = ACTIVITIES[this.activity];
@@ -354,9 +390,19 @@ export class PlayerController {
     this.crouched = false;
     this.velY = 0;
     this.grounded = true;
-    this.playerPos.copy(SPAWN_POS);
-    const eyeTarget = SPAWN_POS.clone().add(new THREE.Vector3(0, EYE_STAND, 0));
-    this.glideCameraTo(eyeTarget, SPAWN_YAW, SPAWN_PITCH, 0.9);
+    this.playerPos.copy(spawnPos);
+    this.avatarYaw = spawnYaw;
+    if (this.thirdPerson) {
+      const avRoot = this.deps.getAvatarRoot();
+      avRoot.position.copy(spawnPos);
+      avRoot.rotation.y = spawnYaw;
+      this.yaw = spawnYaw;
+      this.pitch = -0.22;
+      this.glideCameraTo(this.freeRoamTpCameraPos(), spawnYaw, -0.22, 0.9);
+    } else {
+      const eyeTarget = spawnPos.clone().add(new THREE.Vector3(0, EYE_STAND, 0));
+      this.glideCameraTo(eyeTarget, spawnYaw, spawnPitch, 0.9);
+    }
   }
 
   pick(x: number, y: number): ItemEntry | null {
@@ -448,11 +494,11 @@ export class PlayerController {
     // Slide cleanly along X then Z
     const prevX = this.playerPos.x;
     const prevZ = this.playerPos.z;
-    const tryX = Math.max(PLAYER_BOUNDS.minX, Math.min(PLAYER_BOUNDS.maxX, prevX + moveX));
+    const tryX = Math.max(this.bounds.minX, Math.min(this.bounds.maxX, prevX + moveX));
     if (!this.isBlocked(tryX, prevZ, this.playerPos.y)) {
       this.playerPos.x = tryX;
     }
-    const tryZ = Math.max(PLAYER_BOUNDS.minZ, Math.min(PLAYER_BOUNDS.maxZ, prevZ + moveZ));
+    const tryZ = Math.max(this.bounds.minZ, Math.min(this.bounds.maxZ, prevZ + moveZ));
     if (!this.isBlocked(this.playerPos.x, tryZ, this.playerPos.y)) {
       this.playerPos.z = tryZ;
     }
@@ -559,9 +605,9 @@ export class PlayerController {
       this.tpTarget.y + Math.sin(this.tpPitch) * this.tpDist,
       this.tpTarget.z + Math.cos(this.tpYaw) * c * this.tpDist,
     );
-    out.x = Math.max(PLAYER_BOUNDS.minX, Math.min(PLAYER_BOUNDS.maxX, out.x));
+    out.x = Math.max(this.bounds.minX, Math.min(this.bounds.maxX, out.x));
     out.y = Math.max(0.45, Math.min(3.15, out.y));
-    out.z = Math.max(PLAYER_BOUNDS.minZ, Math.min(PLAYER_BOUNDS.maxZ, out.z));
+    out.z = Math.max(this.bounds.minZ, Math.min(this.bounds.maxZ, out.z));
     return out;
   }
 
@@ -575,9 +621,9 @@ export class PlayerController {
       pivotY + Math.sin(tpPitch) * dist,
       this.playerPos.z + Math.cos(this.yaw) * c * dist,
     );
-    out.x = Math.max(ROOM.minX + 0.16, Math.min(ROOM.maxX - 0.16, out.x));
+    out.x = Math.max(this.bounds.minX - 0.1, Math.min(this.bounds.maxX + 0.1, out.x));
     out.y = Math.max(0.25, Math.min(3.25, out.y));
-    out.z = Math.max(ROOM.minZ + 0.16, Math.min(ROOM.maxZ - 0.16, out.z));
+    out.z = Math.max(this.bounds.minZ - 0.1, Math.min(this.bounds.maxZ + 0.1, out.z));
     return out;
   }
 
@@ -644,10 +690,10 @@ export class PlayerController {
   }
 
   private isBlocked(x: number, z: number, footY: number): boolean {
-    if (x < PLAYER_BOUNDS.minX || x > PLAYER_BOUNDS.maxX || z < PLAYER_BOUNDS.minZ || z > PLAYER_BOUNDS.maxZ) {
+    if (x < this.bounds.minX || x > this.bounds.maxX || z < this.bounds.minZ || z > this.bounds.maxZ) {
       return true;
     }
-    for (const c of COLLIDERS) {
+    for (const c of this.colliders) {
       if (footY + STEP_UP >= c.topY && c.walkable) continue;
       if (
         x + PLAYER_RADIUS > c.minX &&
@@ -664,7 +710,7 @@ export class PlayerController {
   private supportHeight(x: number, z: number, footY: number): number {
     let h = 0;
     const r = PLAYER_RADIUS * 0.7;
-    for (const c of COLLIDERS) {
+    for (const c of this.colliders) {
       if (!c.walkable) continue;
       if (x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) {
         if (footY >= c.topY - 0.16) {
@@ -679,7 +725,7 @@ export class PlayerController {
     this.ndc.set(nx, ny);
     this.raycaster.setFromCamera(this.ndc, this.deps.camera);
     this.raycaster.far = maxDist;
-    const hits = this.raycaster.intersectObject(this.deps.getRoom(), true);
+    const hits = this.raycaster.intersectObject(this.activeRoot, true);
     const avRoot = this.deps.getAvatarRoot();
     const items = this.deps.getItems();
     for (const hit of hits) {

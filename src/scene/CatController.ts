@@ -104,6 +104,16 @@ const REST_BED_TAKEOFF = new THREE.Vector3(-1.24, 0, -0.5);
 const MOUSE_SPOT = new THREE.Vector3(1.18, 0, -2.25);
 const MOUSE_HOLE = new THREE.Vector3(...FURNITURE_POS.mouseHole);
 const SCRATCH_POST = new THREE.Vector3(...FURNITURE_POS.scratcher);
+const SCRATCH_APPROACH = { x: 2.18, z: -1.12 };
+const SCRATCH_ANCHOR = (() => {
+  const dx = SCRATCH_APPROACH.x - SCRATCH_POST.x;
+  const dz = SCRATCH_APPROACH.z - SCRATCH_POST.z;
+  const len = Math.hypot(dx, dz) || 1;
+  return {
+    x: SCRATCH_POST.x + (dx / len) * 0.27,
+    z: SCRATCH_POST.z + (dz / len) * 0.27,
+  };
+})();
 
 const FLOOR_WANDER_SPOTS: [number, number][] = [
   [0.4, 0.4],
@@ -219,6 +229,7 @@ export class CatController {
   // Toy play accumulators
   private yarnBatsLeft = 0;
   private yarnBatCooldown = 0;
+  private yarnBatAnim = 0;
   private scratchSfxTimer = 0;
   private pomBattedThisScratch = false;
   private wandLeapIndex = -1;
@@ -365,7 +376,7 @@ export class CatController {
     this.wandLeapIndex = -1;
     const go = () => {
       this.playSfx("trill");
-      this.walkToFloor(1.62, -1.28, 1.45, () => {
+      this.walkToFloor(1.88, -1.44, 1.45, () => {
         this.wandLeapIndex = -1;
         this.enterState("play_wand", 7.2);
       });
@@ -377,7 +388,7 @@ export class CatController {
   notifyPomBatted() {
     if (this.ownerResting || this.state === "jump") return;
     const go = () => {
-      this.walkToFloor(2.18, -1.12, 1.35, () => {
+      this.walkToFloor(SCRATCH_APPROACH.x, SCRATCH_APPROACH.z, 1.35, () => {
         this.scratchSfxTimer = 0.15;
         this.pomBattedThisScratch = false;
         this.enterState("scratch", 3.6);
@@ -479,6 +490,7 @@ export class CatController {
     this.sfxCooldown = Math.max(0, this.sfxCooldown - dt);
     this.crouchCooldown = Math.max(0, this.crouchCooldown - dt);
     this.stalkCooldown = Math.max(0, this.stalkCooldown - dt);
+    this.yarnBatAnim = Math.max(0, this.yarnBatAnim - dt);
 
     if (this.callTrillTimer > 0) {
       this.callTrillTimer -= dt;
@@ -790,6 +802,7 @@ export class CatController {
                   ? Math.atan2(toCenterZ, toCenterX)
                   : Math.atan2(dz, dx);
               const ang = baseAngle + (Math.random() - 0.5) * 1.25;
+              this.yarnBatAnim = 0.32;
               this.cb.onBatYarn?.(Math.cos(ang), Math.sin(ang), 2.3 + Math.random() * 0.9);
               this.playSfx("meow");
             } else {
@@ -837,6 +850,10 @@ export class CatController {
 
       case "scratch": {
         this.scratchPhase += dt * 11.5;
+        const steppingBack = this.stateTime >= this.stateDur - 0.35;
+        const targetPos = steppingBack ? SCRATCH_APPROACH : SCRATCH_ANCHOR;
+        pos.x = approach(pos.x, targetPos.x, 12, dt);
+        pos.z = approach(pos.z, targetPos.z, 12, dt);
         const toPostYaw = Math.atan2(SCRATCH_POST.x - pos.x, SCRATCH_POST.z - pos.z);
         this.yaw = approachAngle(this.yaw, toPostYaw, 11, dt);
         this.scratchSfxTimer -= dt;
@@ -971,7 +988,7 @@ export class CatController {
       this.toyRepathTimer = 0;
       this.enterState("chase_yarn", 7.5);
     } else if (r < 0.94) {
-      this.walkToFloor(2.18, -1.12, 1.2, () => {
+      this.walkToFloor(SCRATCH_APPROACH.x, SCRATCH_APPROACH.z, 1.2, () => {
         this.scratchSfxTimer = 0.2;
         this.pomBattedThisScratch = false;
         this.enterState("scratch", 3.4);
@@ -1356,7 +1373,7 @@ export class CatController {
       }
 
       case "groom": {
-        tBodyY = -0.048;
+        tBodyY = -0.025;
         tBodyPitch = -0.26; // sit back on haunches
         tBlX = 1.1;
         tBrX = 1.1;
@@ -1368,7 +1385,7 @@ export class CatController {
         tHeadPitch = 0.28 + lick * 0.14;
         tHeadYaw = -0.28;
         tHeadRoll = 0.18 * lick;
-        tp0 = 1.15;
+        tp0 = 0.92;
         tp1 = 0.2;
         ty0 = 0.7;
         ty1 = 0.45;
@@ -1415,6 +1432,10 @@ export class CatController {
         tBrX = s * 0.65;
         tFrX = -s * 0.65;
         tBlX = -s * 0.65;
+        if (this.state === "chase_yarn" && this.yarnBatAnim > 0) {
+          tFrX = -1.1 * Math.sin((this.yarnBatAnim / 0.32) * Math.PI);
+          tFrZ = -0.25;
+        }
         tHeadPitch = 0.14;
         tp0 = 0.2;
         tp1 = 0.25;
@@ -1429,14 +1450,16 @@ export class CatController {
         const cycle = this.stateTime % 1.25;
         const leaping = cycle > 0.72 && cycle < 1.12;
         if (leaping) {
-          tBodyPitch = -0.58;
-          tFlX = -0.95 + Math.sin(t * 16) * 0.25;
-          tFrX = -0.95 - Math.sin(t * 16) * 0.25;
+          tBodyY = 0.04;
+          tBodyPitch = -0.62;
+          tFlX = -1.05 + Math.sin(t * 18) * 0.32;
+          tFrX = -1.05 - Math.sin(t * 18) * 0.32;
           tBlX = 0.65;
           tBrX = 0.65;
         } else {
-          tBodyY = -0.055;
-          tBodyRoll = Math.sin(t * 12) * 0.05;
+          tBodyY = -0.045;
+          tBodyPitch = 0.1;
+          tBodyRoll = Math.sin(t * 14) * 0.055;
           tFlX = -0.45;
           tFrX = -0.45;
           tBlX = 0.55;
@@ -1456,21 +1479,22 @@ export class CatController {
 
       case "scratch": {
         const swipe = Math.sin(this.scratchPhase);
-        tBodyY = -0.025;
-        tBodyPitch = -0.68; // rear upright against the scratching post!
-        tBlX = 0.72;
-        tBrX = 0.72;
-        tFlX = -0.85 - Math.max(0, swipe) * 0.42;
-        tFrX = -0.85 - Math.max(0, -swipe) * 0.42;
-        tHeadPitch = 0.25;
-        tp0 = 0.9;
+        tBodyY = 0.055;
+        tBodyPitch = -0.78; // rear upright against the scratching post!
+        tBodyRoll = swipe * 0.07;
+        tBlX = 0.78;
+        tBrX = 0.78;
+        tFlX = -1.08 - Math.max(0, swipe) * 0.42;
+        tFrX = -1.08 - Math.max(0, -swipe) * 0.42;
+        tHeadPitch = 0.12;
+        tp0 = 0.55;
         tp1 = 0.25;
-        ty0 = Math.sin(t * 3.5) * 0.16;
+        ty0 = Math.sin(t * 3.5) * 0.18;
         break;
       }
 
       case "sit": {
-        tBodyY = -0.045;
+        tBodyY = -0.025;
         tBodyPitch = -0.26; // sit upright
         tBlX = 1.1;
         tBrX = 1.1;
@@ -1478,7 +1502,7 @@ export class CatController {
         tFrX = 0.26;
         tHeadPitch = 0.22 + relPitch * 0.75;
         tHeadYaw = relYaw * 0.85;
-        tp0 = 1.15;
+        tp0 = 0.92;
         tp1 = 0.15;
         tp2 = 0.1;
         ty0 = 0.55 + Math.sin(t * 1.4) * 0.18;

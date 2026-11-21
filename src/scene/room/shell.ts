@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { M, PAL, ball, box, cyl, hitProxy, rbox, woodFloorTexture } from "../kit";
-import { ROOM, WALL_H, WALL_T, WINDOW } from "../layout";
+import { M, PAL, ball, box, cyl, hitProxy, rbox, rod, v, woodFloorTexture } from "../kit";
+import { FURNITURE_POS, ROOM, WALL_H, WALL_T, WINDOW } from "../layout";
 import { tag, type RoomRefs } from "./types";
 
 export function buildShell(room: THREE.Group) {
@@ -128,4 +128,44 @@ export function buildWindowAndCurtains(room: THREE.Group, refs: RoomRefs) {
   }
   suc.add(ball(0.028, M(PAL.leaf, 0.7), 0, 0.12, 0, 8, 6));
   room.add(suc);
+}
+
+/** Wooden loft ladder beside the back bookshelf leading up to the Cozy Rooftop Terrace. */
+export function buildRooftopLadder(room: THREE.Group, refs: RoomRefs) {
+  const g = tag(new THREE.Group(), "ladder");
+  g.position.set(FURNITURE_POS.ladder[0], 0, 0);
+
+  const railMat = M(PAL.woodDark, 0.72);
+  const rungMat = M(PAL.wood, 0.68);
+  const trimMat = M(PAL.trim, 0.75);
+
+  const bottomZ = -2.68;
+  const topZ = -2.93;
+  const topY = 3.28;
+  const halfW = 0.21;
+
+  // side rails leaning gently against the wall
+  for (const sx of [-halfW, halfW]) {
+    g.add(rod(v(sx, 0, bottomZ), v(sx, topY, topZ), 0.024, railMat, 10));
+    g.add(ball(0.024, railMat, sx, topY, topZ, 8, 6));
+  }
+
+  // 9 evenly spaced rungs
+  const count = 9;
+  for (let i = 0; i < count; i++) {
+    const k = (i + 0.6) / count;
+    const y = k * (topY - 0.15);
+    const z = bottomZ + (topZ - bottomZ) * (y / topY);
+    const rung = cyl(0.017, 0.017, halfW * 2, rungMat, 0, y, z, 10);
+    rung.rotation.z = Math.PI / 2;
+    g.add(rung);
+  }
+
+  // small overhead trapdoor frame at top of wall
+  g.add(rbox(0.58, 0.07, 0.22, 0.015, trimMat, 0, WALL_H - 0.03, -2.94));
+  g.add(box(0.46, 0.02, 0.14, M(PAL.indigo, 0.9), 0, WALL_H - 0.06, -2.92));
+
+  g.add(hitProxy(0.62, WALL_H - 0.1, 0.45, 0, WALL_H * 0.48, -2.78));
+  room.add(g);
+  refs.items.ladder = g;
 }

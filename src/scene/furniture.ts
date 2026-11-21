@@ -4,14 +4,14 @@ import { buildAvatar } from "./avatars";
 import { buildCat, buildCatToys } from "./room/catAndToys";
 import { buildExerciseCorner } from "./room/exerciseCorner";
 import { buildBed, buildConsoleTable, buildFloorLounge, buildPlant } from "./room/restArea";
-import { buildShell, buildWindowAndCurtains } from "./room/shell";
+import { buildRooftopLadder, buildShell, buildWindowAndCurtains } from "./room/shell";
 import { buildBookshelf, buildChair, buildDesk } from "./room/studyArea";
 import type { RoomRefs } from "./room/types";
 import { buildTodoBoard, buildWallDecor } from "./room/wallDecor";
 
 export type { AvatarRig } from "./avatars";
 export { ROOM, WINDOW, WALL_H } from "./layout";
-export type { CatRig, InteractId, RoomRefs } from "./room/types";
+export type { CatRig, InteractId, RooftopRefs, RoomRefs } from "./room/types";
 
 export function buildRoom(): { room: THREE.Group; refs: RoomRefs } {
   const room = new THREE.Group();
@@ -19,6 +19,7 @@ export function buildRoom(): { room: THREE.Group; refs: RoomRefs } {
 
   buildShell(room);
   buildWindowAndCurtains(room, refs);
+  buildRooftopLadder(room, refs);
   buildDesk(room, refs);
   buildChair(room, refs);
   buildBed(room, refs);

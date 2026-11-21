@@ -128,6 +128,10 @@ export class FxSystem {
     });
   }
 
+  setSteamVisible(visible: boolean): void {
+    for (const s of this.steam) s.visible = visible;
+  }
+
   /** All textures allocated by FxSystem (so unused glyph textures are also disposed cleanly). */
   getOwnedTextures(): THREE.Texture[] {
     return [this.glowTex, this.hintTex, ...Object.values(this.glyphs)];

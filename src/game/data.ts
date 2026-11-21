@@ -249,6 +249,22 @@ export const SKY_NAMES: Record<SkyPhase, { title: string; body: string }> = {
 /* Save data                                                           */
 /* ------------------------------------------------------------------ */
 
+export interface RooftopSave {
+  tokens: number;
+  constellations: string[];
+  trinkets: string[];
+  memoryBestMoves: number | null;
+  rhythmBestScore: number;
+}
+
+export const DEFAULT_ROOFTOP: RooftopSave = {
+  tokens: 2,
+  constellations: [],
+  trinkets: [],
+  memoryBestMoves: null,
+  rhythmBestScore: 0,
+};
+
 export interface Save {
   found: DiscoveryId[];
   stars: number;
@@ -261,6 +277,7 @@ export interface Save {
   exerciseTotalSec: number;
   exerciseLog: ExerciseLogEntry[];
   radio: RadioPrefs;
+  rooftop: RooftopSave;
 }
 
 const KEY = "cozy-study:save:v1";
@@ -276,6 +293,7 @@ export const FRESH: Save = {
   exerciseTotalSec: 0,
   exerciseLog: [],
   radio: DEFAULT_RADIO,
+  rooftop: DEFAULT_ROOFTOP,
 };
 
 const VALID_PRESETS = new Set<AvatarPresetId>(["bun", "hoodie", "beanie", "bear", "cat", "bunny", "shiba", "bot"]);
@@ -364,6 +382,26 @@ export function loadSave(): Save {
     const stars = Number.isFinite(s.stars) ? Math.max(0, Math.floor(s.stars as number)) : 0;
     const catName = typeof s.catName === "string" ? s.catName.trim().slice(0, 20) || "Miso" : "Miso";
     const onboarded = typeof s.onboarded === "boolean" ? s.onboarded : found.length > 0 || stars > 0;
+    const rt = s.rooftop as Partial<RooftopSave> | undefined;
+    const rooftop: RooftopSave = rt
+      ? {
+          tokens: Number.isFinite(rt.tokens) ? Math.max(0, Math.floor(rt.tokens as number)) : DEFAULT_ROOFTOP.tokens,
+          constellations: Array.isArray(rt.constellations)
+            ? rt.constellations.filter((x): x is string => typeof x === "string").slice(0, 20)
+            : [],
+          trinkets: Array.isArray(rt.trinkets)
+            ? rt.trinkets.filter((x): x is string => typeof x === "string").slice(0, 30)
+            : [],
+          memoryBestMoves:
+            typeof rt.memoryBestMoves === "number" && Number.isFinite(rt.memoryBestMoves) && rt.memoryBestMoves > 0
+              ? Math.floor(rt.memoryBestMoves)
+              : null,
+          rhythmBestScore:
+            typeof rt.rhythmBestScore === "number" && Number.isFinite(rt.rhythmBestScore)
+              ? Math.max(0, Math.floor(rt.rhythmBestScore))
+              : 0,
+        }
+      : DEFAULT_ROOFTOP;
     return {
       found,
       stars,
@@ -376,6 +414,7 @@ export function loadSave(): Save {
       exerciseTotalSec: Number.isFinite(s.exerciseTotalSec) ? Math.max(0, Math.floor(s.exerciseTotalSec as number)) : 0,
       exerciseLog,
       radio,
+      rooftop,
     };
   } catch {
     return FRESH;

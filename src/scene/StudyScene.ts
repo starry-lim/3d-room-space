@@ -3,17 +3,29 @@ import type { AvatarConfig, TodoItem } from "../game/data";
 import { buildAvatar } from "./avatars";
 import { CatController, type CatSfx } from "./CatController";
 import { disposeObjectTree } from "./dispose";
-import { buildRoom, type InteractId, type RoomRefs } from "./furniture";
+import { buildRoom, type InteractId, type RooftopRefs, type RoomRefs } from "./furniture";
 import { resetKit, rng } from "./kit";
 import {
   CHAIR_FOCUS_POS,
   CHAIR_FOCUS_YAW,
   CHAIR_HOME_POS,
   CHAIR_HOME_YAW,
+  COLLIDERS,
   FOV_WALK,
+  PLAYER_BOUNDS,
+  ROOFTOP_COLLIDERS,
+  ROOFTOP_PLAYER_BOUNDS,
+  ROOFTOP_SPAWN_PITCH,
+  ROOFTOP_SPAWN_POS,
+  ROOFTOP_SPAWN_YAW,
+  STUDY_LADDER_RETURN_PITCH,
+  STUDY_LADDER_RETURN_POS,
+  STUDY_LADDER_RETURN_YAW,
   type ActivityMode,
+  type RegionId,
 } from "./layout";
 import { approach, ease, TweenList } from "./math";
+import { buildRooftop } from "./room/rooftop";
 import { drawLaptopScreen, drawTodoBoard, type TimerView } from "./systems/CanvasDisplays";
 import { CatToySystem, type ToySfxKind } from "./systems/CatToySystem";
 import { FxSystem } from "./systems/FxSystem";
@@ -23,7 +35,7 @@ import { SkyLightSystem, type SkyPhase } from "./systems/SkyLightSystem";
 
 export type { CatSfx } from "./CatController";
 export type { InteractId } from "./furniture";
-export type { ActivityMode } from "./layout";
+export type { ActivityMode, RegionId } from "./layout";
 export type { TimerView } from "./systems/CanvasDisplays";
 export type { MoveSfxDetail } from "./systems/PlayerController";
 export type { SkyPhase } from "./systems/SkyLightSystem";
@@ -76,6 +88,12 @@ const META: Record<InteractId, { label: string; pop: number; secret?: boolean; a
   scratcher: { label: "Bat cat toy", pop: 0, secret: true },
   catBox: { label: "Miso's cardboard box", pop: 0.04, secret: true },
   laser: { label: "Laser pointer", pop: 0.08, secret: true },
+  ladder: { label: "Climb to rooftop", pop: 0.04, secret: true },
+  hatch: { label: "Back to study room", pop: 0.04, secret: true },
+  telescope: { label: "Stargazing", pop: 0.06, secret: true },
+  gameTable: { label: "Memory match", pop: 0.05, secret: true },
+  rhythmBox: { label: "Lo-Fi rhythm", pop: 0.05, secret: true },
+  gacha: { label: "Capsule machine", pop: 0.06, secret: true },
 };
 
 /* ================================================================== */
@@ -86,6 +104,10 @@ export class StudyScene {
   private camera: THREE.PerspectiveCamera;
   private room: THREE.Group;
   private refs: RoomRefs;
+  private rooftop: THREE.Group;
+  private rooftopRefs: RooftopRefs;
+  private region: RegionId = "study";
+  private gachaSpin = 0;
   private fxGroup = new THREE.Group();
   private ro: ResizeObserver;
   private raf = 0;
@@ -138,6 +160,7 @@ export class StudyScene {
   private screenKey = "";
   private tmpV = new THREE.Vector3();
   private tmpV2 = new THREE.Vector3();
+  private tmpC = new THREE.Color();
 
   constructor(
     private container: HTMLElement,
@@ -164,8 +187,13 @@ export class StudyScene {
     const { room, refs } = buildRoom();
     this.room = room;
     this.refs = refs;
-    this.scene.add(room, this.fxGroup);
+    const { rooftop, refs: rtRefs } = buildRooftop();
+    rooftop.visible = false;
+    this.rooftop = rooftop;
+    this.rooftopRefs = rtRefs;
+    this.scene.add(room, rooftop, this.fxGroup);
     room.updateMatrixWorld(true);
+    rooftop.updateMatrixWorld(true);
 
     this.fxSys = new FxSystem(this.fxGroup, refs.mug, this.rand);
     this.skyLight = new SkyLightSystem(
@@ -313,6 +341,7 @@ export class StudyScene {
   }
 
   callCat(): void {
+    if (this.region !== "study") return;
     this.catCtrl.callToPlayer(this.player.playerPos, this.player.resting, this.player.activity);
   }
 
@@ -368,14 +397,49 @@ export class StudyScene {
     this.player.setAvatarPreview(on);
   }
 
+  setRegion(next: RegionId): void {
+    if (next === this.region) return;
+    if (this.player.resting) this.setResting(false);
+    if (this.player.activity !== "none") this.setActivity("none");
+    this.region = next;
+
+    const dest = next === "rooftop" ? this.rooftop : this.room;
+    dest.add(this.refs.avatar.root);
+    this.room.visible = next === "study";
+    this.rooftop.visible = next === "rooftop";
+    this.skyLight.setRoofShadowEnabled(next === "study");
+    this.fxSys.setSteamVisible(next === "study");
+
+    if (next === "rooftop") {
+      this.player.setRegion(
+        this.rooftop,
+        ROOFTOP_PLAYER_BOUNDS,
+        ROOFTOP_COLLIDERS,
+        ROOFTOP_SPAWN_POS,
+        ROOFTOP_SPAWN_YAW,
+        ROOFTOP_SPAWN_PITCH,
+      );
+    } else {
+      this.player.setRegion(
+        this.room,
+        PLAYER_BOUNDS,
+        COLLIDERS,
+        STUDY_LADDER_RETURN_POS,
+        STUDY_LADDER_RETURN_YAW,
+        STUDY_LADDER_RETURN_PITCH,
+      );
+    }
+  }
+
   setAvatarConfig(cfg: AvatarConfig): void {
     const old = this.refs.avatar;
     const next = buildAvatar(cfg);
     next.root.position.copy(old.root.position);
     next.root.rotation.copy(old.root.rotation);
     next.root.visible = !this.player.resting && (this.player.thirdPerson || this.player.avatarPreview);
-    this.room.remove(old.root);
-    this.room.add(next.root);
+    old.root.parent?.remove(old.root);
+    const activeParent = this.region === "rooftop" ? this.rooftop : this.room;
+    activeParent.add(next.root);
     this.refs.avatar = next;
     old.dispose();
   }
@@ -426,7 +490,11 @@ export class StudyScene {
   }
 
   resetView(): void {
-    this.player.resetView();
+    if (this.region === "rooftop") {
+      this.player.resetView(ROOFTOP_SPAWN_POS, ROOFTOP_SPAWN_YAW, ROOFTOP_SPAWN_PITCH);
+    } else {
+      this.player.resetView();
+    }
   }
 
   /** Projected screen position of an interactable — handy for tests and tooling. */
@@ -466,7 +534,7 @@ export class StudyScene {
     const box3 = new THREE.Box3();
     const hintTex = this.fxSys.hintTex;
     (Object.keys(META) as InteractId[]).forEach((id) => {
-      const root = this.refs.items[id];
+      const root = this.refs.items[id] ?? this.rooftopRefs.items[id];
       if (!root) return;
       const meta = META[id];
       const anchor = new THREE.Vector3();
@@ -682,6 +750,9 @@ export class StudyScene {
         this.player.markHoverDirty();
         break;
       }
+      case "gacha":
+        this.gachaSpin = 1;
+        break;
       case "timer":
       case "bed":
       case "study":
@@ -691,6 +762,11 @@ export class StudyScene {
       case "dumbbells":
       case "bike":
       case "todo":
+      case "ladder":
+      case "hatch":
+      case "telescope":
+      case "gameTable":
+      case "rhythmBox":
         break;
     }
     this.cb.onInteract(e);
@@ -725,6 +801,46 @@ export class StudyScene {
   };
 
   private updateAmbient(dt: number, t: number): void {
+    /* activity avatar + mug sip */
+    this.avatarAct.update(dt, t, {
+      activity: this.player.activity,
+      poufReading: this.player.poufReading,
+      exercisePaused: this.player.exercisePaused,
+      resting: this.player.resting,
+      thirdPerson: this.player.thirdPerson,
+      radioOn: this.radioOn,
+      playerPos: this.player.playerPos,
+      avatarYaw: this.player.avatarYaw,
+      moveSpeed: this.player.moveSpeed,
+      walkPhase: this.player.walkPhase,
+      crouchK: this.player.crouchK,
+      landDip: this.player.landDip,
+      grounded: this.player.grounded,
+      camera: this.camera,
+      rand: this.rand,
+      onMugSfx: (kind) => this.cb.onMugSfx?.(kind),
+      onSipDone: () => this.player.markHoverDirty(),
+    });
+
+    if (this.region === "rooftop") {
+      const bulbs = this.rooftopRefs.fairyBulbs;
+      const darkBoost = 0.65 + 0.55 * this.skyLight.dark;
+      for (let i = 0; i < bulbs.count; i++) {
+        const tw = 0.78 + 0.22 * Math.sin(t * 2.2 + i * 1.4);
+        this.tmpC.copy(this.rooftopRefs.fairyColors[i]).multiplyScalar(tw * darkBoost);
+        bulbs.setColorAt(i, this.tmpC);
+      }
+      if (bulbs.instanceColor) bulbs.instanceColor.needsUpdate = true;
+      for (const m of this.rooftopRefs.lanternGlows) {
+        m.emissiveIntensity = (0.45 + 0.7 * this.skyLight.dark) * (0.92 + 0.08 * Math.sin(t * 3.1));
+      }
+      if (this.gachaSpin > 0) {
+        this.gachaSpin = Math.max(0, this.gachaSpin - dt * 1.6);
+        this.rooftopRefs.gachaKnob.rotation.z = Math.sin(this.gachaSpin * Math.PI) * Math.PI * 2;
+      }
+      return;
+    }
+
     const { refs } = this;
 
     /* curtains breathe in the draught */
@@ -767,26 +883,6 @@ export class StudyScene {
       laserPos: this.toys.laserPos,
     });
 
-    /* activity avatar + mug sip + books */
-    this.avatarAct.update(dt, t, {
-      activity: this.player.activity,
-      poufReading: this.player.poufReading,
-      exercisePaused: this.player.exercisePaused,
-      resting: this.player.resting,
-      thirdPerson: this.player.thirdPerson,
-      radioOn: this.radioOn,
-      playerPos: this.player.playerPos,
-      avatarYaw: this.player.avatarYaw,
-      moveSpeed: this.player.moveSpeed,
-      walkPhase: this.player.walkPhase,
-      crouchK: this.player.crouchK,
-      landDip: this.player.landDip,
-      grounded: this.player.grounded,
-      camera: this.camera,
-      rand: this.rand,
-      onMugSfx: (kind) => this.cb.onMugSfx?.(kind),
-      onSipDone: () => this.player.markHoverDirty(),
-    });
     this.avatarAct.updateBooks(dt, this.player.activity, this.player.poufReading, this.rand);
 
     /* steam follows the mug rim in world space */
@@ -894,7 +990,7 @@ export class StudyScene {
           const p = this.refs.cat.root.position;
           it.anchor.set(p.x, p.y + 0.46, p.z);
         }
-        const show = this.hintsOn && !this.discovered.has(it.id);
+        const show = this.region === "study" && this.hintsOn && !this.discovered.has(it.id);
         const m = it.hint.material;
         m.opacity = approach(m.opacity, show ? 0.75 + 0.25 * Math.sin(t * 3 + it.anchor.x * 3) : 0, 6, dt);
         it.hint.visible = m.opacity > 0.02;

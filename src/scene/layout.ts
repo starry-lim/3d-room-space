@@ -1,9 +1,19 @@
 import * as THREE from "three";
 
+export type RegionId = "study" | "rooftop";
 export type ActivityMode = "none" | "desk" | "pouf" | "yoga" | "weights" | "bike";
 
 /** Room floor bounds (world X/Z). Expanded +X and +Z for fitness corner & cat toys. */
 export const ROOM = { minX: -3, maxX: 5.2, minZ: -3, maxZ: 3.6 } as const;
+
+export const ROOFTOP_ROOM = { minX: -3.4, maxX: 3.4, minZ: -3.2, maxZ: 3.2 } as const;
+
+export const ROOFTOP_PLAYER_BOUNDS = {
+  minX: ROOFTOP_ROOM.minX + 0.34,
+  maxX: ROOFTOP_ROOM.maxX - 0.34,
+  minZ: ROOFTOP_ROOM.minZ + 0.34,
+  maxZ: ROOFTOP_ROOM.maxZ - 0.34,
+} as const;
 
 /** Window opening in the back wall (world units). The sunbeam is derived from this. */
 export const WINDOW = { x0: -1.0, x1: 0.8, y0: 1.2, y1: 2.7, z: -3.0 } as const;
@@ -61,6 +71,7 @@ export const FURNITURE_POS = {
   wand: [1.78, 0, -1.85] as const,
   yogaMat: [3.85, 0, 0.15] as const,
   todoBoard: [-2.97, 1.88, 0.72] as const,
+  ladder: [3.22, 0, -2.85] as const,
 } as const;
 
 export interface Box2D {
@@ -136,6 +147,32 @@ export const CHAIR_HOME_POS = new THREE.Vector3(...FURNITURE_POS.chairHome);
 export const CHAIR_HOME_YAW = -0.38;
 export const CHAIR_FOCUS_POS = new THREE.Vector3(...FURNITURE_POS.chairFocus);
 export const CHAIR_FOCUS_YAW = 0;
+
+export const STUDY_LADDER_RETURN_POS = new THREE.Vector3(3.15, 0, -2.05);
+export const STUDY_LADDER_RETURN_YAW = Math.PI - 0.15;
+export const STUDY_LADDER_RETURN_PITCH = -0.08;
+
+export const ROOFTOP_SPAWN_POS = new THREE.Vector3(0, 0, 1.55);
+export const ROOFTOP_SPAWN_YAW = 0;
+export const ROOFTOP_SPAWN_PITCH = -0.1;
+
+export const ROOFTOP_COLLIDERS: Collider[] = [
+  // Telescope (-2.15, 0, -2.15)
+  { minX: -2.55, maxX: -1.75, minZ: -2.55, maxZ: -1.75, topY: 1.35, walkable: false, catObstacle: false },
+  // Patio game table (-1.75, 0, 0.75)
+  { minX: -2.28, maxX: -1.22, minZ: 0.22, maxZ: 1.28, topY: 0.68, walkable: true, catObstacle: false },
+  // Lantern boombox bench (2.1, 0, -1.75)
+  { minX: 1.48, maxX: 2.72, minZ: -2.15, maxZ: -1.35, topY: 0.44, walkable: true, catObstacle: false },
+  // Retro capsule machine (2.15, 0, 0.95)
+  { minX: 1.78, maxX: 2.52, minZ: 0.58, maxZ: 1.32, topY: 1.35, walkable: false, catObstacle: false },
+  // Rooftop hatch rim (0, 0, 2.38), low walkable frame
+  { minX: -0.45, maxX: 0.45, minZ: 1.98, maxZ: 2.78, topY: 0.14, walkable: true, catObstacle: false },
+  // 4 corner planter boxes
+  { minX: -3.22, maxX: -2.38, minZ: -3.05, maxZ: -2.35, topY: 0.45, walkable: false, catObstacle: false },
+  { minX: 2.38, maxX: 3.22, minZ: -3.05, maxZ: -2.35, topY: 0.45, walkable: false, catObstacle: false },
+  { minX: -3.22, maxX: -2.38, minZ: 2.35, maxZ: 3.05, topY: 0.45, walkable: false, catObstacle: false },
+  { minX: 2.38, maxX: 3.22, minZ: 2.35, maxZ: 3.05, topY: 0.45, walkable: false, catObstacle: false },
+];
 
 export interface ActivityPose {
   fpPos: THREE.Vector3;

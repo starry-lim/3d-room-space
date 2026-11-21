@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StudyScene, type ActivityMode, type SceneEvent } from "./scene/StudyScene";
+import { StudyScene, type ActivityMode, type RegionId, type SceneEvent } from "./scene/StudyScene";
 import { sound } from "./game/audio";
+import { rollTrinket, type ConstellationDef, type TrinketDef } from "./game/rooftopData";
 import {
   DISCOVERIES,
   DISCOVERY_BY_ID,
@@ -42,7 +43,20 @@ import {
   Veil,
   type Toast,
 } from "./ui/Hud";
+import { CapsuleMachinePanel, MemoryMatchPanel, RhythmTapPanel, StargazingPanel } from "./ui/Minigames";
 import { cn } from "./utils/cn";
+
+type PanelId =
+  | "timer"
+  | "journal"
+  | "todo"
+  | "avatar"
+  | "exercise"
+  | "radio"
+  | "stargazing"
+  | "memory"
+  | "rhythm"
+  | "gacha";
 
 const TITLE = "Cozy Study · a corner to focus in";
 const clampEnergy = (n: number) => Math.min(100, Math.max(0, n));
@@ -62,7 +76,9 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [glError, setGlError] = useState(false);
   const [save, setSave] = useState<Save>(loadSave);
-  const [panel, setPanel] = useState<"timer" | "journal" | "todo" | "avatar" | "exercise" | "radio" | null>(null);
+  const [panel, setPanel] = useState<PanelId | null>(null);
+  const [region, setRegion] = useState<RegionId>("study");
+  const [teleportFade, setTeleportFade] = useState(false);
   const [resting, setResting] = useState(false);
   const [activity, setActivity] = useState<ActivityMode>("none");
   const [poufReading, setPoufReading] = useState(false);
@@ -97,9 +113,20 @@ export default function App() {
   thirdPersonRef.current = thirdPerson;
   const exSecRef = useRef(exSec);
   exSecRef.current = exSec;
+  const regionRef = useRef(region);
+  regionRef.current = region;
+  const teleportingRef = useRef(false);
+  const teleportTimersRef = useRef<number[]>([]);
   const toastId = useRef(0);
   const page = useRef(0);
   const lastSip = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      for (const id of teleportTimersRef.current) window.clearTimeout(id);
+      teleportTimersRef.current = [];
+    };
+  }, []);
 
   /* ---------------------------------------------------------------- */
   /* Toasts, discoveries, energy                                       */
@@ -114,6 +141,142 @@ export default function App() {
 
   const addEnergy = useCallback((d: number) => {
     setSave((s) => ({ ...s, energy: clampEnergy(s.energy + d) }));
+  }, []);
+
+  const teleportTo = useCallback(
+    (target: RegionId) => {
+      if (teleportingRef.current || regionRef.current === target) return;
+      teleportingRef.current = true;
+      sound.whoosh();
+      sceneRef.current?.unlockPointer();
+      setTeleportFade(true);
+
+      const t1 = window.setTimeout(() => {
+        sceneRef.current?.setRegion(target);
+        setRegion(target);
+        setPanel(null);
+        setResting(false);
+        setActivity("none");
+        setExRunning(false);
+
+        const t2 = window.setTimeout(() => {
+          setTeleportFade(false);
+          teleportingRef.current = false;
+          pushToast(
+            {
+              tone: "note",
+              tag: target === "rooftop" ? "Rooftop" : "Study",
+              title: target === "rooftop" ? "Cozy Rooftop Terrace" : "Back in the Study",
+              body:
+                target === "rooftop"
+                  ? "Unwind with stargazing, memory cards, lo-fi rhythm, or the capsule machine."
+                  : "Home sweet desk.",
+            },
+            3600,
+          );
+        }, 210);
+        teleportTimersRef.current.push(t2);
+      }, 220);
+      teleportTimersRef.current.push(t1);
+    },
+    [pushToast],
+  );
+
+  const completeConstellation = useCallback(
+    (c: ConstellationDef, isFirstTime: boolean) => {
+      setSave((s) => ({
+        ...s,
+        energy: clampEnergy(s.energy + 6),
+        rooftop: {
+          ...s.rooftop,
+          tokens: s.rooftop.tokens + 2,
+          constellations: s.rooftop.constellations.includes(c.id)
+            ? s.rooftop.constellations
+            : [...s.rooftop.constellations, c.id],
+        },
+      }));
+      pushToast(
+        {
+          tone: isFirstTime ? "secret" : "note",
+          tag: isFirstTime ? "New constellation!" : "Stargazing",
+          title: `${c.name} · ${c.zhName}`,
+          body: "+6 Energy · +2 Rooftop Tokens",
+        },
+        4200,
+      );
+    },
+    [pushToast],
+  );
+
+  const winMemoryMatch = useCallback(
+    (moves: number) => {
+      setSave((s) => ({
+        ...s,
+        energy: clampEnergy(s.energy + 6),
+        rooftop: {
+          ...s.rooftop,
+          tokens: s.rooftop.tokens + 2,
+          memoryBestMoves: s.rooftop.memoryBestMoves === null ? moves : Math.min(s.rooftop.memoryBestMoves, moves),
+        },
+      }));
+      pushToast(
+        {
+          tone: "note",
+          tag: "Memory Match",
+          title: `Cleared in ${moves} moves`,
+          body: "+6 Energy · +2 Rooftop Tokens",
+        },
+        4200,
+      );
+    },
+    [pushToast],
+  );
+
+  const finishRhythmGame = useCallback(
+    (score: number, maxCombo: number) => {
+      const earned = score >= 250 ? 3 : 2;
+      setSave((s) => ({
+        ...s,
+        energy: clampEnergy(s.energy + 8),
+        rooftop: {
+          ...s.rooftop,
+          tokens: s.rooftop.tokens + earned,
+          rhythmBestScore: Math.max(s.rooftop.rhythmBestScore, score),
+        },
+      }));
+      pushToast(
+        {
+          tone: "note",
+          tag: "Lo-Fi Rhythm",
+          title: `Score ${score} (${maxCombo}× max combo)`,
+          body: `+8 Energy · +${earned} Rooftop Tokens`,
+        },
+        4200,
+      );
+    },
+    [pushToast],
+  );
+
+  const pullCapsule = useCallback((payWithStar: boolean): { trinket: TrinketDef; isNew: boolean } | null => {
+    const cur = saveRef.current;
+    if (payWithStar && cur.stars < 1) return null;
+    if (!payWithStar && cur.rooftop.tokens < 2) return null;
+    const trinket = rollTrinket(cur.rooftop.trinkets);
+    const isNew = !cur.rooftop.trinkets.includes(trinket.id);
+    setSave((s) => {
+      const already = s.rooftop.trinkets.includes(trinket.id);
+      const baseTokens = payWithStar ? s.rooftop.tokens : s.rooftop.tokens - 2;
+      return {
+        ...s,
+        stars: payWithStar ? Math.max(0, s.stars - 1) : s.stars,
+        rooftop: {
+          ...s.rooftop,
+          tokens: Math.max(0, baseTokens) + (already ? 1 : 0),
+          trinkets: already ? s.rooftop.trinkets : [...s.rooftop.trinkets, trinket.id],
+        },
+      };
+    });
+    return { trinket, isNew };
   }, []);
 
   const discover = useCallback(
@@ -549,6 +712,28 @@ export default function App() {
         sound.page();
         discover("box");
         break;
+      case "ladder":
+        teleportTo("rooftop");
+        break;
+      case "hatch":
+        teleportTo("study");
+        break;
+      case "telescope":
+        sound.pop();
+        setPanel((p) => (p === "stargazing" ? null : "stargazing"));
+        break;
+      case "gameTable":
+        sound.pop();
+        setPanel((p) => (p === "memory" ? null : "memory"));
+        break;
+      case "rhythmBox":
+        sound.pop();
+        setPanel((p) => (p === "rhythm" ? null : "rhythm"));
+        break;
+      case "gacha":
+        sound.gachaCrank();
+        setPanel((p) => (p === "gacha" ? null : "gacha"));
+        break;
     }
   };
   const interactRef = useRef(onInteract);
@@ -637,9 +822,7 @@ export default function App() {
   }, [save.todos]);
 
   useEffect(() => {
-    sceneRef.current?.setUiOpen(
-      panel === "timer" || panel === "journal" || panel === "todo" || panel === "exercise" || panel === "radio",
-    );
+    sceneRef.current?.setUiOpen(panel !== null && panel !== "avatar");
     sceneRef.current?.setAvatarPreview(panel === "avatar");
   }, [panel]);
 
@@ -679,6 +862,7 @@ export default function App() {
     save.exerciseTotalSec,
     save.exerciseLog,
     save.radio,
+    save.rooftop,
   ]);
 
   /* a nudge for first-time visitors once the camera has settled */
@@ -739,7 +923,7 @@ export default function App() {
         else if (panel) setPanel(null);
         else if (restingRef.current) wake();
         else if (activityRef.current !== "none") exitActivity();
-      } else if (onButton) {
+      } else if (onButton || panel === "rhythm") {
         return;
       } else if (k === "v" && !restingRef.current) {
         toggleThirdPerson();
@@ -808,6 +992,23 @@ export default function App() {
         <div className="flex items-start justify-between gap-2">
           <div className="flex flex-col items-start">
             <Brand stars={save.stars} energy={save.energy} />
+            {region === "rooftop" && (
+              <div className="pointer-events-auto mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => teleportTo("study")}
+                  className="paper press flex items-center gap-1.5 rounded-xl bg-mustard px-3 py-1.5 text-[12px] font-extrabold text-ink"
+                >
+                  <span>↓ Back to Study</span>
+                </button>
+                <span
+                  className="paper rounded-xl px-2.5 py-1.5 text-[11.5px] font-extrabold text-ink-soft"
+                  title="Earn Rooftop Tokens by playing minigames"
+                >
+                  🪙 {save.rooftop.tokens} Tokens
+                </span>
+              </div>
+            )}
             {save.todoPinned && panel !== "todo" && (
               <PinnedTodo
                 todos={save.todos}
@@ -870,6 +1071,46 @@ export default function App() {
               <ExercisePanel
                 totalSec={save.exerciseTotalSec}
                 log={save.exerciseLog}
+                onClose={() => setPanel(null)}
+              />
+            </div>
+          )}
+          {panel === "stargazing" && (
+            <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+              <StargazingPanel
+                completedIds={save.rooftop.constellations}
+                tokens={save.rooftop.tokens}
+                onCompleteConstellation={completeConstellation}
+                onClose={() => setPanel(null)}
+              />
+            </div>
+          )}
+          {panel === "memory" && (
+            <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+              <MemoryMatchPanel
+                bestMoves={save.rooftop.memoryBestMoves}
+                tokens={save.rooftop.tokens}
+                onWin={winMemoryMatch}
+                onClose={() => setPanel(null)}
+              />
+            </div>
+          )}
+          {panel === "rhythm" && (
+            <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+              <RhythmTapPanel
+                bestScore={save.rooftop.rhythmBestScore}
+                tokens={save.rooftop.tokens}
+                onFinish={finishRhythmGame}
+                onClose={() => setPanel(null)}
+              />
+            </div>
+          )}
+          {panel === "gacha" && (
+            <div className="absolute inset-x-0 bottom-3 top-3 z-20 flex justify-end">
+              <CapsuleMachinePanel
+                rooftop={save.rooftop}
+                stars={save.stars}
+                onPull={pullCapsule}
                 onClose={() => setPanel(null)}
               />
             </div>
@@ -963,6 +1204,13 @@ export default function App() {
       )}
       {!touch && !locked && (resting || activity !== "none" || panel !== null) && <CursorLabel text={hover} />}
       <Veil gone={ready} />
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none fixed inset-0 z-50 bg-night transition-opacity duration-200",
+          teleportFade ? "opacity-100" : "opacity-0",
+        )}
+      />
     </div>
   );
 }
