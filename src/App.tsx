@@ -44,7 +44,7 @@ import {
 } from "./ui/Hud";
 import { cn } from "./utils/cn";
 
-const TITLE = "Cozy Study 角落 · a corner to focus in";
+const TITLE = "Cozy Study · a corner to focus in";
 const clampEnergy = (n: number) => Math.min(100, Math.max(0, n));
 const isExercise = (m: ActivityMode): m is ExerciseKind => m === "yoga" || m === "weights" || m === "bike";
 

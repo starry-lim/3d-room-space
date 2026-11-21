@@ -252,9 +252,7 @@ export function Brand({ stars, energy }: { stars: number; energy: number }) {
     <div className="pointer-events-auto flex flex-col items-start gap-2">
       <div className="paper flex items-center rounded-2xl px-3.5 py-2">
         <div>
-          <h1 className="font-display text-[19px] font-semibold italic leading-none">
-            Cozy Study<span className="sr-only"> 角落</span>
-          </h1>
+          <h1 className="font-display text-[19px] font-semibold italic leading-none">Cozy Study</h1>
           <p className="mt-1 text-[9.5px] font-extrabold uppercase leading-none tracking-[0.2em] text-ink-soft">
             a corner to focus in
           </p>
@@ -2014,9 +2012,6 @@ export function Veil({ gone }: { gone: boolean }) {
       )}
     >
       <div className="flex flex-col items-center gap-3 text-paper">
-        <span className="seal h-14 w-10 text-[21px]" lang="zh">
-          角<br />落
-        </span>
         <p className="font-display text-[28px] italic leading-none">Cozy Study</p>
         <p className="anim-breathe text-[10.5px] font-extrabold uppercase tracking-[0.26em] text-paper/70">
           warming up the lamp
