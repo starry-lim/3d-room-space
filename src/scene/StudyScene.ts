@@ -486,13 +486,26 @@ export class StudyScene {
       }
       if (companionId && ownedIds.includes(companionId)) {
         const comp = buildAcrylicStandee(companionId, 0.72);
-        comp.position.copy(this.player.playerPos);
-        comp.position.y += 0.95;
         const activeRoot = this.region === "rooftop" ? this.rooftop : this.room;
         activeRoot.add(comp);
         this.companionStandee = comp;
+        this.placeCompanionNearPlayer();
       }
     }
+  }
+
+  private placeCompanionNearPlayer(): void {
+    if (!this.companionStandee) return;
+    const yaw = this.player.yaw;
+    const fwdX = -Math.sin(yaw);
+    const fwdZ = -Math.cos(yaw);
+    const rightX = Math.cos(yaw);
+    const rightZ = -Math.sin(yaw);
+    this.companionStandee.position.set(
+      this.player.playerPos.x + fwdX * 0.55 + rightX * 0.42,
+      this.player.playerPos.y + 0.94,
+      this.player.playerPos.z + fwdZ * 0.55 + rightZ * 0.42,
+    );
   }
 
   setRegion(next: RegionId): void {
@@ -528,6 +541,7 @@ export class StudyScene {
         STUDY_LADDER_RETURN_PITCH,
       );
     }
+    this.placeCompanionNearPlayer();
   }
 
   setAvatarConfig(cfg: AvatarConfig): void {
@@ -923,19 +937,26 @@ export class StudyScene {
     });
 
     if (this.companionStandee) {
-      const yaw = this.player.yaw;
-      const rightX = Math.cos(yaw);
-      const rightZ = -Math.sin(yaw);
-      const fwdX = -Math.sin(yaw);
-      const fwdZ = -Math.cos(yaw);
-      const tx = this.player.playerPos.x + rightX * 0.46 + fwdX * 0.2;
-      const tz = this.player.playerPos.z + rightZ * 0.46 + fwdZ * 0.2;
+      const comp = this.companionStandee;
+      const dx = comp.position.x - this.player.playerPos.x;
+      const dz = comp.position.z - this.player.playerPos.z;
+      const dist = Math.hypot(dx, dz);
+      // Stay in place while you look around; follow softly only when you walk away or stand too close
+      if (dist > 0.75) {
+        const tx = this.player.playerPos.x + (dx / dist) * 0.65;
+        const tz = this.player.playerPos.z + (dz / dist) * 0.65;
+        comp.position.x = approach(comp.position.x, tx, 4.5, dt);
+        comp.position.z = approach(comp.position.z, tz, 4.5, dt);
+      } else if (dist > 0.001 && dist < 0.35) {
+        const tx = this.player.playerPos.x + (dx / dist) * 0.55;
+        const tz = this.player.playerPos.z + (dz / dist) * 0.55;
+        comp.position.x = approach(comp.position.x, tx, 4.5, dt);
+        comp.position.z = approach(comp.position.z, tz, 4.5, dt);
+      }
       const ty = this.player.playerPos.y + 0.94 + Math.sin(t * 2.4) * 0.05;
-      this.companionStandee.position.x = approach(this.companionStandee.position.x, tx, 8, dt);
-      this.companionStandee.position.y = approach(this.companionStandee.position.y, ty, 8, dt);
-      this.companionStandee.position.z = approach(this.companionStandee.position.z, tz, 8, dt);
-      this.companionStandee.visible = !this.player.resting;
-      this.companionStandee.lookAt(this.camera.position.x, this.companionStandee.position.y, this.camera.position.z);
+      comp.position.y = approach(comp.position.y, ty, 8, dt);
+      comp.visible = !this.player.resting;
+      comp.lookAt(this.camera.position.x, comp.position.y, this.camera.position.z);
     }
 
     if (this.region === "rooftop") {
