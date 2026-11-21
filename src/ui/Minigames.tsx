@@ -490,7 +490,7 @@ export function StargazingPanel({
       </div>
 
       {/* Live 3D sky eyepiece reticle */}
-      <div className="pointer-events-auto relative h-[min(48vh,340px)] w-[min(48vh,340px)] shrink-0 overflow-hidden rounded-full border-2 border-mustard/45 bg-[#120f24]/25 backdrop-blur-[1px]">
+      <div className="pointer-events-auto relative h-[min(48vh,340px)] w-[min(48vh,340px)] shrink-0 overflow-hidden rounded-full border-2 border-mustard/45 bg-[#120f24]/30">
         <svg viewBox="0 0 100 100" className="block h-full w-full select-none">
           {/* Ghost guide lines */}
           {cur.stars.slice(0, -1).map(([x1, y1], i) => {
@@ -713,7 +713,7 @@ export function MemoryMatchPanel({
     <aside
       role="dialog"
       aria-label="Cozy Memory Match"
-      className="paper anim-rise pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] bg-paper/92 backdrop-blur-xs sm:w-[420px]"
+      className="paper anim-rise pointer-events-auto flex max-h-full w-full flex-col rounded-[26px] bg-paper/95 sm:w-[420px]"
     >
       <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
         <div>

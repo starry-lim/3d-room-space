@@ -76,8 +76,7 @@ export class SkyLightSystem {
   private lamp = new THREE.SpotLight(0xffc88a, 0, 7, 0.95, 0.85, 1.7);
   private fairy = new THREE.PointLight(0xffb870, 0, 7.5, 2);
   private candle = new THREE.PointLight(0xff9a4a, 0, 4.5, 2);
-  private rooftopLight = new THREE.PointLight(0xffbe72, 0, 12, 1.8);
-  private rooftopLanternLight = new THREE.PointLight(0xffa852, 0, 5.5, 2);
+  private lanternPos = new THREE.Vector3(2.25, 0.85, -1.72);
   private roofSlab!: THREE.Mesh;
   private onRooftop = false;
 
@@ -248,6 +247,27 @@ export class SkyLightSystem {
     this.boxGlow.visible = enabled;
     this.rooftopFairyGlow.visible = !enabled;
     this.rooftopLanternGlow.visible = !enabled;
+    if (enabled) {
+      this.fairy.color.setHex(0xffb870);
+      this.fairy.position.set(-1.8, 2.35, -0.9);
+      this.fairy.distance = 7.5;
+      this.fairy.decay = 2;
+      this.candle.color.setHex(0xff9a4a);
+      this.candle.position.set(0.5, 1.5, -2.72);
+      this.candle.distance = 4.5;
+      this.candle.decay = 2;
+    } else {
+      // Reuse the two secondary PointLights for rooftop overhead & bench lanterns
+      // so the PBR fragment shader stays at 3 PointLights total.
+      this.fairy.color.setHex(0xffbe72);
+      this.fairy.position.set(0, 2.5, 0);
+      this.fairy.distance = 12;
+      this.fairy.decay = 1.8;
+      this.candle.color.setHex(0xffa852);
+      this.candle.position.copy(this.lanternPos);
+      this.candle.distance = 5.5;
+      this.candle.decay = 2;
+    }
   }
 
   getOwnedTextures(): THREE.Texture[] {
@@ -289,25 +309,11 @@ export class SkyLightSystem {
 
     this.fairy.position.set(-1.8, 2.35, -0.9);
     this.candle.position.set(0.5, 1.5, -2.72);
-    this.rooftopLight.position.set(0, 2.5, 0);
     if (this.rooftopRefs.items.rhythmBox) {
-      this.rooftopRefs.items.rhythmBox.localToWorld(this.rooftopLanternLight.position.set(0.36, 0.72, -0.02));
-    } else {
-      this.rooftopLanternLight.position.set(2.25, 0.85, -1.72);
+      this.rooftopRefs.items.rhythmBox.localToWorld(this.lanternPos.set(0.36, 0.72, -0.02));
     }
 
-    scene.add(
-      this.hemi,
-      sun,
-      sun.target,
-      this.bounce,
-      lamp,
-      lamp.target,
-      this.fairy,
-      this.candle,
-      this.rooftopLight,
-      this.rooftopLanternLight,
-    );
+    scene.add(this.hemi, sun, sun.target, this.bounce, lamp, lamp.target, this.fairy, this.candle);
 
     // The diorama has no roof, so without this the sun would flood the whole floor.
     // This slab draws nothing on screen but still casts a shadow, which means
@@ -602,24 +608,32 @@ export class SkyLightSystem {
 
     // lamp reads brighter as the room gets darker, like eyes adjusting
     const dark = this.cur.dark;
-    const studyFade = this.onRooftop ? 0 : 1;
-    this.lamp.intensity = studyFade * this.lampLevel * (4.5 + 10 * dark);
+    if (this.onRooftop) {
+      this.lamp.intensity = 0;
+      this.lampGlow.material.opacity = 0;
+      this.candleGlow.material.opacity = 0;
+      this.fairyGlow.material.opacity = 0;
+      refs.flame.visible = false;
+      this.fairy.intensity = (2.4 + 6.2 * dark) * (0.96 + 0.04 * Math.sin(t * 1.9));
+      this.candle.intensity = (1.4 + 3.8 * dark) * (0.93 + 0.07 * Math.sin(t * 3.1));
+      this.rooftopFairyGlow.material.opacity = (0.34 + 0.46 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1));
+      this.rooftopLanternGlow.material.opacity = (0.28 + 0.44 * dark) * (0.92 + 0.08 * Math.sin(t * 3.1));
+      return;
+    }
+
+    this.lamp.intensity = this.lampLevel * (4.5 + 10 * dark);
     refs.lampBulb.emissiveIntensity = this.lampLevel * 3.2;
-    this.lampGlow.material.opacity = studyFade * this.lampLevel * (0.25 + 0.4 * dark);
+    this.lampGlow.material.opacity = this.lampLevel * (0.25 + 0.4 * dark);
 
     const flick = 0.82 + 0.1 * Math.sin(t * 11.3) + 0.08 * Math.sin(t * 23.7 + 1.3) + 0.05 * Math.sin(t * 5.1);
-    this.candle.intensity = studyFade * this.candleLevel * flick * (3 + 4.5 * dark);
-    this.candleGlow.material.opacity = studyFade * this.candleLevel * flick * 0.7;
+    this.candle.intensity = this.candleLevel * flick * (3 + 4.5 * dark);
+    this.candleGlow.material.opacity = this.candleLevel * flick * 0.7;
     refs.flame.visible = this.candleLevel > 0.03;
     refs.flame.scale.set(0.75 * this.candleLevel, (1.4 + 0.5 * flick) * this.candleLevel, 0.75 * this.candleLevel);
     refs.flame.position.x = Math.sin(t * 7.1) * 0.003;
 
-    this.fairy.intensity = studyFade * this.fairyLevel * (3.5 + 5.5 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1));
-    this.fairyGlow.material.opacity = studyFade * this.fairyLevel * (0.3 + 0.35 * dark);
-    this.rooftopLight.intensity = this.onRooftop ? (2.4 + 6.2 * dark) * (0.96 + 0.04 * Math.sin(t * 1.9)) : 0;
-    this.rooftopLanternLight.intensity = this.onRooftop ? (1.4 + 3.8 * dark) * (0.93 + 0.07 * Math.sin(t * 3.1)) : 0;
-    this.rooftopFairyGlow.material.opacity = this.onRooftop ? (0.34 + 0.46 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1)) : 0;
-    this.rooftopLanternGlow.material.opacity = this.onRooftop ? (0.28 + 0.44 * dark) * (0.92 + 0.08 * Math.sin(t * 3.1)) : 0;
+    this.fairy.intensity = this.fairyLevel * (3.5 + 5.5 * dark) * (0.94 + 0.06 * Math.sin(t * 2.1));
+    this.fairyGlow.material.opacity = this.fairyLevel * (0.3 + 0.35 * dark);
     const bulbs = refs.fairyBulbs;
     for (let i = 0; i < bulbs.count; i++) {
       const tw = 0.8 + 0.2 * Math.sin(t * 2.4 + i * 1.9) + 0.12 * Math.sin(t * 5.3 + i * 0.7);

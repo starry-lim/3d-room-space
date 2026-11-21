@@ -215,19 +215,19 @@ export function getTrinketTexture(id: string): THREE.CanvasTexture {
   if (existing) return existing;
 
   const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 256;
+  canvas.width = 128;
+  canvas.height = 128;
   const ctx = canvas.getContext("2d");
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   textureCache.set(id, tex);
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="256" height="256">${getTrinketInnerSvg(id)}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="128" height="128">${getTrinketInnerSvg(id)}</svg>`;
   const img = new Image();
   img.onload = () => {
     if (!ctx) return;
-    ctx.clearRect(0, 0, 256, 256);
-    ctx.drawImage(img, 0, 0, 256, 256);
+    ctx.clearRect(0, 0, 128, 128);
+    ctx.drawImage(img, 0, 0, 128, 128);
     tex.needsUpdate = true;
   };
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -238,20 +238,21 @@ export function getTrinketTexture(id: string): THREE.CanvasTexture {
 export function buildAcrylicStandee(id: string, scale = 1): THREE.Group {
   const g = new THREE.Group();
   g.userData.standeeId = id;
-  g.add(cyl(0.068, 0.072, 0.014, M(PAL.cream, 0.45), 0, 0.007, 0, 18));
+  const base = cyl(0.068, 0.072, 0.014, M(PAL.cream, 0.45), 0, 0.007, 0, 14);
+  base.castShadow = false;
+  g.add(base);
   const tex = getTrinketTexture(id);
   const card = new THREE.Mesh(
     new THREE.PlaneGeometry(0.18, 0.18),
-    new THREE.MeshStandardMaterial({
+    new THREE.MeshLambertMaterial({
       map: tex,
       transparent: true,
-      alphaTest: 0.08,
+      alphaTest: 0.1,
       side: THREE.DoubleSide,
-      roughness: 0.35,
     }),
   );
   card.position.set(0, 0.098, 0);
-  card.castShadow = true;
+  card.castShadow = false;
   g.add(card);
   g.scale.setScalar(scale);
   return g;
