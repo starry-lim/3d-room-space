@@ -199,10 +199,16 @@ class Sound {
     f.frequency.setValueAtTime(260, t);
     f.Q.value = 1.0;
 
-    // Soft warm throat hum that flutters with the breath noise
+    // Soft warm throat hum that rises slightly on inhales and lowers on exhales across 3 breaths
     const sub = ctx.createOscillator();
     sub.type = "sine";
-    sub.frequency.setValueAtTime(115, t);
+    sub.frequency.setValueAtTime(110, t);
+    sub.frequency.exponentialRampToValueAtTime(122, t + 0.45);
+    sub.frequency.exponentialRampToValueAtTime(106, t + 1.15);
+    sub.frequency.exponentialRampToValueAtTime(122, t + 1.65);
+    sub.frequency.exponentialRampToValueAtTime(106, t + 2.35);
+    sub.frequency.exponentialRampToValueAtTime(120, t + 2.85);
+    sub.frequency.exponentialRampToValueAtTime(102, t + 3.6);
     const subGain = ctx.createGain();
     subGain.gain.setValueAtTime(0.065, t);
 
@@ -215,22 +221,26 @@ class Sound {
     depth.gain.value = 0.25;
     lfo.connect(depth).connect(trem.gain);
 
-    // Stage 2: outer envelope clearly audible on laptop speakers, fading cleanly to silence
+    // Stage 2: 3 natural breathing cycles ("purr ~ purr ~ purr ~"), fading cleanly to silence
     const env = ctx.createGain();
     env.gain.setValueAtTime(0.0001, t);
-    env.gain.exponentialRampToValueAtTime(0.38, t + 0.28);
-    env.gain.exponentialRampToValueAtTime(0.0001, t + 1.65);
+    env.gain.exponentialRampToValueAtTime(0.36, t + 0.45);
+    env.gain.exponentialRampToValueAtTime(0.11, t + 1.15);
+    env.gain.exponentialRampToValueAtTime(0.38, t + 1.65);
+    env.gain.exponentialRampToValueAtTime(0.1, t + 2.35);
+    env.gain.exponentialRampToValueAtTime(0.3, t + 2.85);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
 
     src.connect(f).connect(trem);
     sub.connect(subGain).connect(trem);
     trem.connect(env).connect(this.master);
 
     src.start(t, Math.random());
-    src.stop(t + 1.7);
+    src.stop(t + 3.65);
     sub.start(t);
-    sub.stop(t + 1.7);
+    sub.stop(t + 3.65);
     lfo.start(t);
-    lfo.stop(t + 1.7);
+    lfo.stop(t + 3.65);
   }
   meow() {
     const ctx = this.ctx;
