@@ -875,7 +875,6 @@ export function FocusCard({
   reading,
   thirdPerson,
   modelOpen,
-  onToggleView,
   onToggleModel,
   onToggleReading,
   onFlipPage,
@@ -885,7 +884,6 @@ export function FocusCard({
   reading: boolean;
   thirdPerson: boolean;
   modelOpen: boolean;
-  onToggleView: () => void;
   onToggleModel: () => void;
   onToggleReading?: () => void;
   onFlipPage: () => void;
@@ -901,22 +899,10 @@ export function FocusCard({
         <div>
           <p className="font-display text-[15.5px] font-semibold italic leading-none">{title}</p>
           <p className="mt-0.5 text-[10.5px] font-bold leading-none text-ink-soft">
-            {thirdPerson ? "3rd person · drag to orbit" : "1st person · drag to look"}
+            {thirdPerson ? "3rd person · drag to orbit · V" : "1st person · drag to look · V"}
           </p>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onToggleView}
-        aria-pressed={thirdPerson}
-        className={cn(
-          "press flex items-center gap-1.5 rounded-xl border-[1.5px] border-ink px-3 py-1.5 text-[12px] font-extrabold shadow-[2px_2px_0_var(--color-ink)]",
-          thirdPerson ? "bg-mustard" : "bg-paper-deep",
-        )}
-      >
-        <Icon name="eye" size={15} />
-        <span>{thirdPerson ? "1st person (V)" : "3rd person (V)"}</span>
-      </button>
       <button
         type="button"
         onClick={onToggleModel}
@@ -961,11 +947,9 @@ export function ExerciseCard({
   label,
   seconds,
   running,
-  thirdPerson,
   modelOpen,
   historyOpen,
   onToggleRun,
-  onToggleView,
   onToggleModel,
   onToggleHistory,
   onFinish,
@@ -977,7 +961,6 @@ export function ExerciseCard({
   modelOpen: boolean;
   historyOpen: boolean;
   onToggleRun: () => void;
-  onToggleView: () => void;
   onToggleModel: () => void;
   onToggleHistory: () => void;
   onFinish: () => void;
@@ -1003,18 +986,6 @@ export function ExerciseCard({
       >
         <Icon name={running ? "pause" : "play"} size={14} />
         <span>{running ? "Pause" : "Resume"}</span>
-      </button>
-      <button
-        type="button"
-        onClick={onToggleView}
-        aria-pressed={thirdPerson}
-        className={cn(
-          "press flex items-center gap-1.5 rounded-xl border-[1.5px] border-ink px-2.5 py-1.5 text-[12px] font-extrabold shadow-[2px_2px_0_var(--color-ink)]",
-          thirdPerson ? "bg-mustard" : "bg-paper-deep",
-        )}
-      >
-        <Icon name="eye" size={14} />
-        <span>{thirdPerson ? "1st (V)" : "3rd (V)"}</span>
       </button>
       <button
         type="button"

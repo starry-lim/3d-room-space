@@ -441,6 +441,10 @@ export class StudyScene {
   private exercisePaused = false;
   private exPhase = 0;
   private thirdPerson = false;
+  private avatarYaw = SPAWN_YAW;
+  private moveSpeed = 0;
+  private walkPhase = 0;
+  private crouchK = 0;
   private tpTarget = ACTIVITIES.desk.tpTarget.clone();
   private tpYaw = 0.72;
   private tpPitch = 0.3;
@@ -994,6 +998,7 @@ export class StudyScene {
       this.crouched = false;
       this.velY = 0;
       this.lampOn = false;
+      this.refs.avatar.root.visible = false;
       this.setSky("night", 3.2);
       this.refs.bedLump.visible = true;
       this.glideCameraTo(REST_POS, REST_YAW, REST_PITCH, 1.5);
@@ -1004,8 +1009,16 @@ export class StudyScene {
       this.velY = 0;
       this.grounded = true;
       this.playerPos.copy(WAKE_POS);
-      const eyeTarget = WAKE_POS.clone().add(new THREE.Vector3(0, EYE_STAND, 0));
-      this.glideCameraTo(eyeTarget, WAKE_YAW, WAKE_PITCH, 1.3);
+      this.avatarYaw = WAKE_YAW;
+      this.refs.avatar.root.visible = this.thirdPerson;
+      if (this.thirdPerson) {
+        this.refs.avatar.root.position.copy(WAKE_POS);
+        this.refs.avatar.root.rotation.y = WAKE_YAW;
+        this.glideCameraTo(this.freeRoamTpCameraPos(), WAKE_YAW, -0.25, 1.3);
+      } else {
+        const eyeTarget = WAKE_POS.clone().add(new THREE.Vector3(0, EYE_STAND, 0));
+        this.glideCameraTo(eyeTarget, WAKE_YAW, WAKE_PITCH, 1.3);
+      }
     }
   }
 
@@ -1053,10 +1066,6 @@ export class StudyScene {
       this.refs.avatar.root.rotation.y = spec.avatarYaw;
       this.refs.avatar.root.visible = this.thirdPerson;
       this.tpTarget.copy(spec.tpTarget);
-      if (prev === "none") {
-        this.thirdPerson = false;
-        this.refs.avatar.root.visible = false;
-      }
       this.unlockPointer();
       this.keys.clear();
       this.crouched = false;
@@ -1074,16 +1083,30 @@ export class StudyScene {
         this.glideCameraTo(spec.fpPos, spec.fpYaw, spec.fpPitch, 0.9);
       }
     } else {
-      this.thirdPerson = false;
-      this.refs.avatar.root.visible = false;
       this.crouched = false;
       this.eyeHeight = EYE_STAND;
       this.velY = 0;
       this.grounded = true;
       const back = ACTIVITIES[this.lastStation];
       this.playerPos.copy(back.standPos);
-      const eyeTarget = back.standPos.clone().add(new THREE.Vector3(0, EYE_STAND, 0));
-      this.glideCameraTo(eyeTarget, back.standYaw, back.standPitch, 0.85);
+      this.avatarYaw = back.standYaw;
+      this.refs.avatar.root.visible = this.thirdPerson;
+      if (this.thirdPerson) {
+        this.refs.avatar.root.position.copy(back.standPos);
+        this.refs.avatar.root.rotation.y = back.standYaw;
+        const lookY = back.standPos.y + 1.18;
+        this.yaw = back.standYaw;
+        this.pitch = -0.22;
+        const tpPos = this.freeRoamTpCameraPos();
+        const dx = back.standPos.x - tpPos.x;
+        const dy = lookY - tpPos.y;
+        const dz = back.standPos.z - tpPos.z;
+        const horiz = Math.max(0.001, Math.hypot(dx, dz));
+        this.glideCameraTo(tpPos, Math.atan2(-dx, -dz), Math.atan2(dy, horiz), 0.85);
+      } else {
+        const eyeTarget = back.standPos.clone().add(new THREE.Vector3(0, EYE_STAND, 0));
+        this.glideCameraTo(eyeTarget, back.standYaw, back.standPitch, 0.85);
+      }
     }
   }
 
@@ -1104,10 +1127,20 @@ export class StudyScene {
   }
 
   setThirdPerson(on: boolean) {
-    if (this.activity === "none" || on === this.thirdPerson) return;
-    const spec = ACTIVITIES[this.activity];
+    if (this.resting || on === this.thirdPerson) return;
     this.thirdPerson = on;
     this.refs.avatar.root.visible = on;
+    this.hoverDirty = true;
+    if (this.activity === "none") {
+      if (on) {
+        this.avatarYaw = this.yaw;
+        this.refs.avatar.root.position.copy(this.playerPos);
+        this.refs.avatar.root.rotation.y = this.avatarYaw;
+      }
+      this.applyCameraPose(0);
+      return;
+    }
+    const spec = ACTIVITIES[this.activity];
     if (on) {
       this.tpTarget.copy(spec.tpTarget);
       this.tpYaw = spec.tpYaw;
@@ -1126,7 +1159,7 @@ export class StudyScene {
     const next = buildAvatar(cfg);
     next.root.position.copy(old.root.position);
     next.root.rotation.copy(old.root.rotation);
-    next.root.visible = this.activity !== "none" && this.thirdPerson;
+    next.root.visible = !this.resting && this.thirdPerson;
     this.room.remove(old.root);
     this.room.add(next.root);
     this.refs.avatar = next;
@@ -1378,6 +1411,22 @@ export class StudyScene {
     return out;
   }
 
+  private freeRoamTpCameraPos(out = new THREE.Vector3()): THREE.Vector3 {
+    const tpPitch = Math.max(-0.75, Math.min(0.72, -this.pitch));
+    const pivotY = this.playerPos.y + (this.crouched ? 0.82 : 1.18) - this.landDip * 0.6;
+    const dist = 2.05;
+    const c = Math.cos(tpPitch);
+    out.set(
+      this.playerPos.x + Math.sin(this.yaw) * c * dist,
+      pivotY + Math.sin(tpPitch) * dist,
+      this.playerPos.z + Math.cos(this.yaw) * c * dist,
+    );
+    out.x = Math.max(ROOM.minX + 0.16, Math.min(ROOM.maxX - 0.16, out.x));
+    out.y = Math.max(0.25, Math.min(3.25, out.y));
+    out.z = Math.max(ROOM.minZ + 0.16, Math.min(ROOM.maxZ - 0.16, out.z));
+    return out;
+  }
+
   private tpOrientation(pos: THREE.Vector3) {
     const dx = this.tpTarget.x - pos.x;
     const dy = this.tpTarget.y - pos.y;
@@ -1569,8 +1618,18 @@ export class StudyScene {
     this.eyeHeight = approach(this.eyeHeight, targetEye, 13, dt);
     this.landDip = approach(this.landDip, 0, 12, dt);
 
-    // Head bob & footstep cadence
+    // Head bob, footstep cadence & free-roam avatar locomotion
     const speedActual = dt > 0 ? movedDist / dt : 0;
+    this.moveSpeed = approach(this.moveSpeed, speedActual, 12, dt);
+    this.crouchK = approach(this.crouchK, this.crouched ? 1 : 0, 12, dt);
+    if (movedDist > 0.001) {
+      this.walkPhase += movedDist * 4.2;
+      const moveYaw = Math.atan2(-(this.playerPos.x - prevX), -(this.playerPos.z - prevZ));
+      this.avatarYaw = approachAngle(this.avatarYaw, moveYaw, 14, dt);
+    } else {
+      this.avatarYaw = approachAngle(this.avatarYaw, this.yaw, 8, dt);
+    }
+
     const targetBob = this.grounded && speedActual > 0.2 && !this.calm ? (running ? 0.045 : this.crouched ? 0.016 : 0.028) : 0;
     this.bobAmp = approach(this.bobAmp, targetBob, 11, dt);
     if (this.grounded && movedDist > 0.0005) {
@@ -1590,6 +1649,12 @@ export class StudyScene {
   }
 
   private applyCameraPose(_dt: number) {
+    if (this.thirdPerson) {
+      const pivotY = this.playerPos.y + (this.crouched ? 0.82 : 1.18) - this.landDip * 0.6;
+      this.camera.position.copy(this.freeRoamTpCameraPos(this.tmpV));
+      this.camera.lookAt(this.playerPos.x, pivotY, this.playerPos.z);
+      return;
+    }
     const bobY = Math.sin(this.bobPhase * 2) * this.bobAmp;
     const bobX = Math.cos(this.bobPhase) * this.bobAmp * 0.55;
     const rightX = Math.cos(this.yaw);
@@ -1863,13 +1928,16 @@ export class StudyScene {
     this.raycaster.setFromCamera(this.ndc, this.camera);
     this.raycaster.far = maxDist;
     const hits = this.raycaster.intersectObject(this.room, true);
+    const avRoot = this.refs.avatar.root;
     for (const hit of hits) {
       let o: THREE.Object3D | null = hit.object;
       let vis = true;
+      let selfAvatar = false;
       for (let p: THREE.Object3D | null = o.userData.proxy ? o.parent : o; p; p = p.parent) {
         if (!p.visible) vis = false;
+        if (p === avRoot) selfAvatar = true;
       }
-      if (!vis) continue;
+      if (!vis || selfAvatar) continue;
       // first visible surface decides: walls and furniture block what is behind them
       while (o) {
         const id = o.userData.interact as InteractId | undefined;
@@ -2524,10 +2592,39 @@ export class StudyScene {
       }
     }
 
-    /* Update 3rd-person Avatar pose (for desk, pouf, yoga, weights, or bike) */
+    /* Update 3rd-person Avatar pose (free-roam or activity) */
     const deskSip3rd = this.sipActive && this.activity === "desk" && this.thirdPerson && av.root.visible;
 
-    if (av.root.visible && this.activity !== "none") {
+    if (av.root.visible && this.activity === "none" && !this.resting) {
+      av.root.position.copy(this.playerPos);
+      av.root.rotation.y = this.avatarYaw;
+      av.pen.visible = false;
+      av.dumbbellL.visible = av.dumbbellR.visible = false;
+      av.torso.scale.y = 1 + Math.sin(t * 1.5) * 0.012;
+
+      const stride = Math.min(1, this.moveSpeed / 2.6);
+      const sw = Math.sin(this.walkPhase) * stride;
+      const cr = this.crouchK;
+      const hop = this.grounded ? 0 : 0.25;
+
+      av.hips.position.set(0, 0.83 - cr * 0.24 - this.landDip * 0.4, 0);
+      av.thighL.rotation.set(sw * 0.55 + cr * 0.88 + hop, 0, 0);
+      av.thighR.rotation.set(-sw * 0.55 + cr * 0.88 + hop, 0, 0);
+      av.shinL.rotation.set(-Math.max(0, -sw) * 0.45 - cr * 1.38 - hop * 1.4, 0, 0);
+      av.shinR.rotation.set(-Math.max(0, sw) * 0.45 - cr * 1.38 - hop * 1.4, 0, 0);
+
+      av.torso.position.set(0, 0.03, 0.01);
+      av.torso.rotation.set(-0.04 - stride * 0.08 - cr * 0.22, 0, 0);
+      av.head.rotation.set(0.04 + musicBob + cr * 0.14, Math.sin(t * 0.5) * 0.04, 0);
+      av.hips.updateMatrixWorld(true);
+
+      const armSwing = sw * 0.18;
+      const handY = 0.72 - cr * 0.16;
+      av.root.localToWorld(this.ikTarget.set(-0.22, handY, -0.04 - armSwing));
+      this.solveArmIK(av.leftArm, av.leftForearm, this.ikTarget, -1);
+      av.root.localToWorld(this.ikTarget.set(0.22, handY, -0.04 + armSwing));
+      this.solveArmIK(av.rightArm, av.rightForearm, this.ikTarget, 1);
+    } else if (av.root.visible && this.activity !== "none") {
       av.pen.visible = this.activity === "desk";
       av.dumbbellL.visible = av.dumbbellR.visible = this.activity === "weights";
       av.torso.scale.y = 1 + Math.sin(t * 1.5) * 0.014;

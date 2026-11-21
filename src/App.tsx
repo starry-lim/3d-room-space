@@ -207,7 +207,6 @@ export default function App() {
       if (standUp) {
         setActivity("none");
         setPoufReading(false);
-        setThirdPerson(false);
         setPanel((p) => (p === "avatar" ? null : p));
         sceneRef.current?.setActivity("none");
       }
@@ -227,7 +226,6 @@ export default function App() {
     if (activityRef.current !== "none") {
       setActivity("none");
       setPoufReading(false);
-      setThirdPerson(false);
       sceneRef.current?.setActivity("none");
     }
     setResting(true);
@@ -316,7 +314,6 @@ export default function App() {
       const reading = mode === "pouf" && !!opts?.reading;
       setActivity(mode);
       setPoufReading(reading);
-      setThirdPerson(false);
       setPanel(null);
       sceneRef.current?.setActivity(mode, opts);
 
@@ -344,14 +341,13 @@ export default function App() {
     }
     setActivity("none");
     setPoufReading(false);
-    setThirdPerson(false);
     setPanel((p) => (p === "avatar" ? null : p));
     sceneRef.current?.setActivity("none");
     sound.pop();
   }, [finishExercise]);
 
   const toggleThirdPerson = useCallback(() => {
-    if (activityRef.current === "none") return;
+    if (restingRef.current) return;
     const next = !thirdPersonRef.current;
     setThirdPerson(next);
     sceneRef.current?.setThirdPerson(next);
@@ -708,7 +704,7 @@ export default function App() {
         else if (activityRef.current !== "none") exitActivity();
       } else if (onButton) {
         return;
-      } else if (k === "v" && activityRef.current !== "none") {
+      } else if (k === "v" && !restingRef.current) {
         toggleThirdPerson();
       } else if (k === "p") {
         e.preventDefault();
@@ -871,7 +867,6 @@ export default function App() {
                 reading={activity === "desk" || poufReading}
                 thirdPerson={thirdPerson}
                 modelOpen={panel === "avatar"}
-                onToggleView={toggleThirdPerson}
                 onToggleModel={toggleModelPanel}
                 onToggleReading={() => enterActivity("pouf", { reading: true })}
                 onFlipPage={flipPage}
@@ -894,7 +889,6 @@ export default function App() {
                     return next;
                   })
                 }
-                onToggleView={toggleThirdPerson}
                 onToggleModel={toggleModelPanel}
                 onToggleHistory={() => setPanel((p) => (p === "exercise" ? null : "exercise"))}
                 onFinish={() => finishExercise(true)}
