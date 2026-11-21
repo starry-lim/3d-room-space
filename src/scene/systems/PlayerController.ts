@@ -366,7 +366,7 @@ export class PlayerController {
         this.glideCameraTo(new THREE.Vector3(1.12, 0.88, 1.98), -1.02, -0.14, 0.65);
       } else if (mode === "memory") {
         // Overhead view centered on the round patio game table at (-1.75, 0.65, 0.75)
-        this.glideCameraTo(new THREE.Vector3(-1.75, 1.48, 0.86), 0, -1.46, 0.65);
+        this.glideCameraTo(new THREE.Vector3(-1.75, 1.58, 0.86), 0, -1.46, 0.65);
       }
     } else if (this.preFocus) {
       const prev = this.preFocus;
@@ -919,7 +919,7 @@ export class PlayerController {
   };
 
   private onDocMouseMove = (e: MouseEvent) => {
-    if (!this.locked || this.disposed) return;
+    if (!this.locked || this.disposed || this.focusView !== "none") return;
     if (this.camTween && !this.resting) this.cancelCamTween();
     const dx = Math.max(-180, Math.min(180, e.movementX));
     const dy = Math.max(-180, Math.min(180, e.movementY));
@@ -984,7 +984,7 @@ export class PlayerController {
       const dy = e.clientY - this.dragStart.y;
       if (!this.dragging && Math.hypot(dx, dy) > 4) {
         this.dragging = true;
-        if (this.camTween && !this.resting) this.cancelCamTween();
+        if (this.camTween && !this.resting && this.focusView !== "memory") this.cancelCamTween();
         this.deps.domElement.style.cursor = "grabbing";
       }
       if (this.dragging) {
