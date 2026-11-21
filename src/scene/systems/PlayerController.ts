@@ -70,6 +70,7 @@ export interface PlayerControllerDeps {
   onLockChange?: (locked: boolean) => void;
   onMoveSfx?: (kind: "step" | "jump" | "land", detail?: MoveSfxDetail) => void;
   onStargazeClick?: (ndcX: number, ndcY: number) => void;
+  onMemoryClick?: (ndcX: number, ndcY: number) => void;
 }
 
 /** Manages player movement, collision, 1st/3rd-person cameras, keyboard hotkeys, pointer drag/lock, and picking. */
@@ -365,7 +366,7 @@ export class PlayerController {
         this.glideCameraTo(new THREE.Vector3(1.12, 0.88, 1.98), -1.02, -0.14, 0.65);
       } else if (mode === "memory") {
         // Overhead view centered on the round patio game table at (-1.75, 0.65, 0.75)
-        this.glideCameraTo(new THREE.Vector3(-1.75, 1.62, 0.96), 0, -1.35, 0.65);
+        this.glideCameraTo(new THREE.Vector3(-1.75, 1.48, 0.86), 0, -1.46, 0.65);
       }
     } else if (this.preFocus) {
       const prev = this.preFocus;
@@ -1037,11 +1038,15 @@ export class PlayerController {
     const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
     const slop = e.pointerType === "mouse" ? 6 : 14;
     if (moved > slop || performance.now() - d.t > 650) return;
-    if (this.focusView === "stargazing") {
+    if (this.focusView === "stargazing" || this.focusView === "memory") {
       const r = this.deps.domElement.getBoundingClientRect();
       const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
       const ny = -((e.clientY - r.top) / r.height) * 2 + 1;
-      this.deps.onStargazeClick?.(nx, ny);
+      if (this.focusView === "stargazing") {
+        this.deps.onStargazeClick?.(nx, ny);
+      } else {
+        this.deps.onMemoryClick?.(nx, ny);
+      }
       return;
     }
     const item = this.pick(e.clientX, e.clientY);

@@ -8,6 +8,7 @@ import {
   type MemoryCardDef,
   type TrinketDef,
 } from "../game/rooftopData";
+import type { MemoryCardView } from "../scene/StudyScene";
 import { cn } from "../utils/cn";
 import { Icon } from "./Hud";
 
@@ -400,6 +401,7 @@ export function StargazingPanel({
   selectedIdx,
   step,
   finished,
+  aimed,
   onSelect,
   onClose,
 }: {
@@ -408,20 +410,46 @@ export function StargazingPanel({
   selectedIdx: number;
   step: number;
   finished: boolean;
+  aimed: boolean;
   onSelect: (idx: number) => void;
   onClose: () => void;
 }) {
   const cur = CONSTELLATIONS[selectedIdx] ?? CONSTELLATIONS[0];
   const totalStars = cur.stars.length;
+  const lockedOn = aimed && !finished;
 
   return (
     <aside
       role="dialog"
       aria-label="Rooftop Stargazing"
-      className="pointer-events-none flex max-h-full w-full max-w-[540px] flex-col items-center justify-between gap-2"
+      className="pointer-events-none flex h-full w-full max-w-[540px] flex-col items-center justify-between gap-2"
     >
+      {/* Pure optical telescope eyepiece crosshair pinned at exact viewport center / NDC (0, 0) */}
+      <div className="pointer-events-none fixed inset-0 grid place-items-center">
+        <div
+          className={cn(
+            "relative grid h-[min(52vh,380px)] w-[min(52vh,380px)] place-items-center rounded-full border-2 shadow-[0_0_0_9999px_rgba(14,11,26,0.28)] transition-colors duration-150",
+            lockedOn ? "border-[#ffe799]" : "border-mustard/55",
+          )}
+        >
+          <div className="h-[88%] w-[88%] rounded-full border border-dashed border-[#ffe799]/25" />
+          <div
+            className={cn(
+              "absolute h-7 w-7 rounded-full border-2 transition-all duration-150",
+              lockedOn ? "scale-110 border-[#ffe799] shadow-[0_0_12px_rgba(255,231,153,0.85)]" : "border-mustard/65",
+            )}
+          />
+          <div className={cn("absolute h-1.5 w-1.5 rounded-full transition-colors", lockedOn ? "bg-[#ffe799]" : "bg-mustard/80")} />
+          {lockedOn && (
+            <span className="absolute top-[calc(50%+22px)] rounded-full border border-ink bg-mustard px-2 py-0.5 text-[10px] font-extrabold text-ink">
+              Aligned · Click
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Top compact paper bar */}
-      <div className="paper anim-rise pointer-events-auto w-full rounded-[22px] px-4 py-3">
+      <div className="paper anim-rise pointer-events-auto relative z-10 w-full rounded-[22px] px-4 py-3">
         <header className="flex items-start justify-between gap-3">
           <div>
             <h2 className="font-display text-[22px] font-semibold italic leading-none">Stargazing</h2>
@@ -469,15 +497,8 @@ export function StargazingPanel({
         </div>
       </div>
 
-      {/* Pure optical telescope eyepiece crosshair (pointer-events-none so you drag/click real 3D stars in the sky) */}
-      <div className="pointer-events-none relative grid h-[min(56vh,400px)] w-[min(56vh,400px)] shrink-0 place-items-center rounded-full border-2 border-mustard/55 shadow-[0_0_0_9999px_rgba(14,11,26,0.28)]">
-        <div className="h-[88%] w-[88%] rounded-full border border-dashed border-[#ffe799]/25" />
-        <div className="absolute h-4 w-4 rounded-full border border-mustard/75" />
-        <div className="absolute h-1.5 w-1.5 rounded-full bg-mustard/80" />
-      </div>
-
       {/* Bottom compact paper bar */}
-      <div className="paper anim-rise pointer-events-auto w-full rounded-[20px] px-4 py-2.5">
+      <div className="paper anim-rise pointer-events-auto relative z-10 w-full rounded-[20px] px-4 py-2.5">
         {finished ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
@@ -503,7 +524,7 @@ export function StargazingPanel({
         ) : (
           <div className="flex items-center justify-between gap-2 text-[12px] font-semibold text-ink-soft">
             <span>
-              <strong className="text-ink">{cur.name}</strong> · Drag sky to pan &amp; click pulsing star ({step + 1}/
+              <strong className="text-ink">{cur.name}</strong> · Drag sky to align pulsing star with crosshair, then click ({step + 1}/
               {totalStars})
             </span>
             <span>+6 Energy · +2 Tokens</span>
@@ -538,22 +559,27 @@ function buildDeck(pairCount: number): CardTile[] {
 export function MemoryMatchPanel({
   bestMoves,
   tokens,
-  onCardEvent,
+  flipCardRef,
+  onSyncCards,
   onWin,
   onClose,
 }: {
   bestMoves: number | null;
   tokens: number;
-  onCardEvent?: (matched: boolean) => void;
+  flipCardRef?: { current: ((idx: number) => void) | null };
+  onSyncCards?: (cards: MemoryCardView[] | null) => void;
   onWin: (moves: number) => void;
   onClose: () => void;
 }) {
   const [pairCount, setPairCount] = useState<6 | 8>(6);
+  const [dealId, setDealId] = useState(0);
   const [cards, setCards] = useState<CardTile[]>(() => buildDeck(6));
   const [picked, setPicked] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
   const [won, setWon] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const onSyncRef = useRef(onSyncCards);
+  onSyncRef.current = onSyncCards;
 
   const clearCompareTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -568,6 +594,7 @@ export function MemoryMatchPanel({
     clearCompareTimer();
     sound.click();
     setPairCount(nextPairs);
+    setDealId((d) => d + 1);
     setCards(buildDeck(nextPairs));
     setPicked([]);
     setMoves(0);
@@ -575,9 +602,8 @@ export function MemoryMatchPanel({
   };
 
   const flipCard = (idx: number) => {
-    if (won || picked.length >= 2 || cards[idx].flipped || cards[idx].matched) return;
+    if (won || picked.length >= 2 || !cards[idx] || cards[idx].flipped || cards[idx].matched) return;
     sound.pop();
-    onCardEvent?.(false);
     const nextCards = cards.map((c, i) => (i === idx ? { ...c, flipped: true } : c));
     const nextPicked = [...picked, idx];
     setCards(nextCards);
@@ -589,7 +615,6 @@ export function MemoryMatchPanel({
       const [a, b] = nextPicked;
       if (nextCards[a].def.id === nextCards[b].def.id) {
         sound.rhythmNote(2);
-        onCardEvent?.(true);
         const solved = nextCards.map((c, i) => (i === a || i === b ? { ...c, matched: true } : c));
         setCards(solved);
         setPicked([]);
@@ -608,11 +633,32 @@ export function MemoryMatchPanel({
     }
   };
 
+  if (flipCardRef) flipCardRef.current = flipCard;
+
+  useEffect(() => {
+    onSyncRef.current?.(
+      cards.map((c) => ({
+        id: `${dealId}-${c.uid}-${c.def.id}`,
+        def: c.def,
+        open: c.flipped || c.matched,
+        matched: c.matched,
+      })),
+    );
+  }, [dealId, cards]);
+
+  useEffect(() => {
+    return () => {
+      if (flipCardRef) flipCardRef.current = null;
+      onSyncRef.current?.(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <aside
       role="dialog"
       aria-label="Cozy Memory Match"
-      className="pointer-events-none flex max-h-full w-full max-w-[460px] flex-col items-center justify-between gap-2.5"
+      className="pointer-events-none flex h-full w-full max-w-[460px] flex-col items-center justify-between gap-2"
     >
       {/* Top compact tabletop bar */}
       <div className="paper anim-rise pointer-events-auto flex w-full flex-wrap items-center justify-between gap-2 rounded-[20px] px-4 py-2.5">
@@ -654,41 +700,7 @@ export function MemoryMatchPanel({
         </div>
       </div>
 
-      {/* Frameless cards laid directly over the 3D wooden tabletop */}
-      <div className="pointer-events-auto grid w-[min(78vw,390px)] grid-cols-4 gap-2.5">
-        {cards.map((card, i) => {
-          const open = card.flipped || card.matched;
-          return (
-            <button
-              key={card.uid}
-              type="button"
-              onClick={() => flipCard(i)}
-              disabled={open}
-              className="card-3d relative aspect-square cursor-pointer rounded-2xl focus-visible:outline-mustard"
-            >
-              <div className={cn("card-inner", open && "flipped")}>
-                {/* Card Back */}
-                <div className="card-face flex flex-col items-center justify-center rounded-2xl border-[1.5px] border-ink bg-paper/95 shadow-[2px_3px_0_var(--color-ink)] transition-colors hover:bg-mustard/50">
-                  <span className="text-[18px] text-ink/45">✦</span>
-                </div>
-                {/* Card Front */}
-                <div
-                  style={{ backgroundColor: card.def.bg, borderColor: card.def.accent }}
-                  className={cn(
-                    "card-face card-face-front flex flex-col items-center justify-center rounded-2xl border-[1.5px] shadow-[2px_3px_0_var(--color-ink)]",
-                    card.matched && "anim-pop ring-2 ring-mustard/80",
-                  )}
-                >
-                  <span className="text-[24px] leading-none">{card.def.symbol}</span>
-                  <span className="mt-1 text-[10px] font-extrabold text-ink/85">{card.def.label}</span>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Win banner */}
+      {/* Bottom status / win banner — leaves the 3D wooden table completely unobstructed */}
       {won ? (
         <div className="paper anim-pop pointer-events-auto flex w-full items-center justify-between gap-2 rounded-[20px] px-4 py-2.5">
           <div>
@@ -704,7 +716,9 @@ export function MemoryMatchPanel({
           </button>
         </div>
       ) : (
-        <div className="h-2" aria-hidden />
+        <div className="paper pointer-events-auto rounded-full px-3.5 py-1 text-[11.5px] font-semibold text-ink-soft">
+          Click cards on the table to flip &amp; match
+        </div>
       )}
     </aside>
   );

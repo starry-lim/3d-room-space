@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { AvatarConfig, TodoItem } from "../game/data";
-import { CONSTELLATIONS } from "../game/rooftopData";
+import { CONSTELLATIONS, type MemoryCardDef } from "../game/rooftopData";
 import { buildAvatar } from "./avatars";
 import { CatController, type CatSfx } from "./CatController";
 import { disposeObjectTree } from "./dispose";
@@ -34,6 +34,7 @@ import { AvatarActivitySystem } from "./systems/AvatarActivitySystem";
 import { PlayerController, type FocusViewMode, type ItemEntry, type MoveSfxDetail } from "./systems/PlayerController";
 import { SkyLightSystem, type SkyPhase } from "./systems/SkyLightSystem";
 import { buildAcrylicStandee, disposeTrinketTextures } from "./trinketTextures";
+import { disposeMemoryCardTextures, getCardBackTexture, getCardFrontTexture } from "./memoryCardTextures";
 
 export type { CatSfx } from "./CatController";
 export type { InteractId } from "./furniture";
@@ -51,6 +52,13 @@ export interface SceneEvent {
   glowing?: boolean;
 }
 
+export interface MemoryCardView {
+  id: string;
+  def: MemoryCardDef;
+  open: boolean;
+  matched: boolean;
+}
+
 export interface SceneCallbacks {
   onInteract: (e: SceneEvent) => void;
   onHover: (label: string | null) => void;
@@ -60,6 +68,8 @@ export interface SceneCallbacks {
   onMugSfx?: (kind: "sip" | "place") => void;
   onToySfx?: (kind: ToySfxKind) => void;
   onStargazeHit?: (starIndex: number) => void;
+  onStargazeAim?: (aligned: boolean) => void;
+  onMemoryCardClick?: (index: number) => void;
   onReady?: () => void;
 }
 
@@ -138,6 +148,12 @@ export class StudyScene {
   private stargazeStep = 0;
   private stargazeStarPts: THREE.Vector3[] = [];
   private stargazePulseSprite: THREE.Sprite | null = null;
+  private stargazeAligned = false;
+  private memoryBoard = new THREE.Group();
+  private memoryDealKey = "";
+  private memoryCardMeshes: { group: THREE.Group; flip: number; targetFlip: number; matched: boolean; pop: number }[] = [];
+  private memoryRaycaster = new THREE.Raycaster();
+  private memoryNdc = new THREE.Vector2();
   private fxGroup = new THREE.Group();
   private ro: ResizeObserver;
   private raf = 0;
@@ -229,6 +245,11 @@ export class StudyScene {
       this.gachaRevealSlot.visible = false;
       rtRefs.items.gacha.add(this.gachaRevealSlot);
     }
+    if (rtRefs.items.gameTable) {
+      this.memoryBoard.position.set(0, 0.665, 0);
+      this.memoryBoard.visible = false;
+      rtRefs.items.gameTable.add(this.memoryBoard);
+    }
     this.fxGroup.add(this.skyConstellation);
     this.scene.add(room, rooftop, this.fxGroup);
     room.updateMatrixWorld(true);
@@ -302,6 +323,7 @@ export class StudyScene {
       onLockChange: (locked) => this.cb.onLockChange?.(locked),
       onMoveSfx: (kind, detail) => this.cb.onMoveSfx?.(kind, detail),
       onStargazeClick: (nx, ny) => this.handleStargazeClick(nx, ny),
+      onMemoryClick: (nx, ny) => this.handleMemoryClick(nx, ny),
     });
 
     this.registerItems();
@@ -465,6 +487,10 @@ export class StudyScene {
 
     if (!id) {
       this.skyConstellation.visible = false;
+      if (this.stargazeAligned) {
+        this.stargazeAligned = false;
+        this.cb.onStargazeAim?.(false);
+      }
       return;
     }
 
@@ -565,14 +591,24 @@ export class StudyScene {
     if (aimCamera) {
       this.player.aimTelescope(anchor.yaw, anchor.pitch);
     }
+    const aligned = this.isStargazeTargetAligned();
+    if (aligned !== this.stargazeAligned) {
+      this.stargazeAligned = aligned;
+      this.cb.onStargazeAim?.(aligned);
+    }
   }
 
-  private handleStargazeClick(ndcX: number, ndcY: number): void {
-    if (!this.stargazeId || this.stargazeStep >= this.stargazeStarPts.length) return;
+  private isStargazeTargetAligned(): boolean {
+    if (!this.stargazeId || this.stargazeStep >= this.stargazeStarPts.length) return false;
+    this.camera.updateMatrixWorld();
     const target = this.stargazeStarPts[this.stargazeStep];
     const proj = this.tmpV2.copy(target).project(this.camera);
-    if (proj.z >= 1) return;
-    if (Math.hypot(proj.x - ndcX, proj.y - ndcY) <= 0.13) {
+    if (proj.z >= 1) return false;
+    return Math.hypot(proj.x * this.camera.aspect, proj.y) <= 0.075;
+  }
+
+  private handleStargazeClick(_ndcX: number, _ndcY: number): void {
+    if (this.isStargazeTargetAligned()) {
       this.cb.onStargazeHit?.(this.stargazeStep);
     }
   }
@@ -612,6 +648,130 @@ export class StudyScene {
 
   pulseTableCards(matched = false): void {
     this.cardPulse = matched ? 1 : 0.6;
+  }
+
+  /** Renders real 3D playable cards directly on the rooftop round patio table. */
+  syncMemoryCards(cards: MemoryCardView[] | null, cols = 4): void {
+    if (!cards) {
+      this.memoryBoard.visible = false;
+      this.memoryDealKey = "";
+      this.disposeStandeeChildren(this.memoryBoard);
+      this.memoryCardMeshes = [];
+      for (const c of this.rooftopRefs.tableCards) c.visible = true;
+      return;
+    }
+
+    for (const c of this.rooftopRefs.tableCards) c.visible = false;
+    this.memoryBoard.visible = true;
+
+    const dealKey = `${cols}:${cards.map((c) => c.id).join(",")}`;
+    if (dealKey !== this.memoryDealKey) {
+      this.memoryDealKey = dealKey;
+      this.disposeStandeeChildren(this.memoryBoard);
+      this.memoryCardMeshes = [];
+
+      const rows = Math.ceil(cards.length / cols);
+      const cardW = rows <= 3 ? 0.145 : 0.13;
+      const cardD = rows <= 3 ? 0.165 : 0.15;
+      const gapX = rows <= 3 ? 0.026 : 0.022;
+      const gapZ = rows <= 3 ? 0.026 : 0.022;
+      const stepX = cardW + gapX;
+      const stepZ = cardD + gapZ;
+      const startX = -((cols - 1) * stepX) / 2;
+      const startZ = -((rows - 1) * stepZ) / 2;
+
+      const backTex = getCardBackTexture();
+      cards.forEach((c, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cardG = new THREE.Group();
+        cardG.position.set(startX + col * stepX, 0.005, startZ + row * stepZ);
+
+        const body = new THREE.Mesh(
+          new THREE.BoxGeometry(cardW, 0.006, cardD),
+          new THREE.MeshLambertMaterial({ color: 0xf5ebd6 }),
+        );
+        body.castShadow = false;
+        body.userData.cardIndex = i;
+
+        const backPlane = new THREE.Mesh(
+          new THREE.PlaneGeometry(cardW * 0.96, cardD * 0.96),
+          new THREE.MeshLambertMaterial({
+            map: backTex,
+            emissive: 0xffffff,
+            emissiveMap: backTex,
+            emissiveIntensity: 0.14,
+          }),
+        );
+        backPlane.position.y = 0.0035;
+        backPlane.rotation.x = -Math.PI / 2;
+        backPlane.castShadow = false;
+        backPlane.userData.cardIndex = i;
+
+        const frontTex = getCardFrontTexture(c.def);
+        const frontPlane = new THREE.Mesh(
+          new THREE.PlaneGeometry(cardW * 0.96, cardD * 0.96),
+          new THREE.MeshLambertMaterial({
+            map: frontTex,
+            emissive: 0xffffff,
+            emissiveMap: frontTex,
+            emissiveIntensity: 0.18,
+          }),
+        );
+        frontPlane.position.y = -0.0035;
+        frontPlane.rotation.order = "YXZ";
+        frontPlane.rotation.set(Math.PI / 2, Math.PI, 0);
+        frontPlane.castShadow = false;
+        frontPlane.userData.cardIndex = i;
+
+        cardG.add(body, backPlane, frontPlane);
+        this.memoryBoard.add(cardG);
+        const openVal = c.open ? 1 : 0;
+        cardG.rotation.z = openVal * Math.PI;
+        this.memoryCardMeshes.push({
+          group: cardG,
+          flip: openVal,
+          targetFlip: openVal,
+          matched: c.matched,
+          pop: 0,
+        });
+      });
+      return;
+    }
+
+    cards.forEach((c, i) => {
+      const entry = this.memoryCardMeshes[i];
+      if (!entry) return;
+      entry.targetFlip = c.open ? 1 : 0;
+      if (c.matched && !entry.matched) {
+        entry.matched = true;
+        entry.pop = 1;
+        const wp = entry.group.getWorldPosition(this.tmpV2);
+        wp.y += 0.04;
+        this.fxSys.emit("spark", wp, 7, {
+          colors: [0xffd76a, 0xfff3c0, 0xf2b949],
+          spread: 0.45,
+          up: 0.65,
+          grav: 1.0,
+          size: 0.085,
+          life: 0.8,
+        });
+      }
+    });
+  }
+
+  private handleMemoryClick(nx: number, ny: number): void {
+    if (!this.memoryBoard.visible || this.memoryCardMeshes.length === 0) return;
+    this.memoryNdc.set(nx, ny);
+    this.memoryRaycaster.setFromCamera(this.memoryNdc, this.camera);
+    const hits = this.memoryRaycaster.intersectObjects(this.memoryBoard.children, true);
+    for (const hit of hits) {
+      const idx = hit.object.userData.cardIndex;
+      if (typeof idx === "number") {
+        this.cb.onMemoryCardClick?.(idx);
+        return;
+      }
+    }
   }
 
   syncTrinkets(ownedIds: string[], deskId: string | null, companionId: string | null): void {
@@ -794,6 +954,7 @@ export class StudyScene {
     this.refs.avatar.dispose();
     disposeObjectTree(this.scene, [...this.fxSys.getOwnedTextures(), ...this.skyLight.getOwnedTextures()]);
     disposeTrinketTextures();
+    disposeMemoryCardTextures();
     this.skyLight.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -862,6 +1023,7 @@ export class StudyScene {
     if (it.id === "bed" && this.player.resting) return "Sleeping…";
     if (it.id === "cat") return this.catCtrl.hoverLabel();
     if (it.id === "mug" && this.avatarAct.isSipping()) return null;
+    if (it.id === "gameTable" && this.memoryBoard.visible) return null;
     if (it.id === "study") return this.player.activity === "desk" ? "Flip a page" : "Sit & focus";
     if (it.id === "pouf") return this.player.activity === "pouf" ? "Relaxing…" : "Sit on the pouf";
     if (it.id === "poufBook") return this.player.activity === "pouf" && this.player.poufReading ? "Flip a page" : "Read on the pouf";
@@ -1219,11 +1381,26 @@ export class StudyScene {
         const s = 5.4 + Math.sin(t * 4.5) * 1.4;
         this.stargazePulseSprite.scale.setScalar(s);
       }
+      if (this.stargazeId) {
+        const aligned = this.isStargazeTargetAligned();
+        if (aligned !== this.stargazeAligned) {
+          this.stargazeAligned = aligned;
+          this.cb.onStargazeAim?.(aligned);
+        }
+      }
       if (this.cardPulse > 0) {
         this.cardPulse = Math.max(0, this.cardPulse - dt * 2.2);
         const lift = Math.sin(this.cardPulse * Math.PI) * 0.032;
         for (const card of this.rooftopRefs.tableCards) {
           card.position.y = 0.668 + lift;
+        }
+      }
+      if (this.memoryBoard.visible) {
+        for (const entry of this.memoryCardMeshes) {
+          entry.flip = approach(entry.flip, entry.targetFlip, 11, dt);
+          entry.pop = Math.max(0, entry.pop - dt * 2.4);
+          entry.group.rotation.z = entry.flip * Math.PI;
+          entry.group.position.y = 0.005 + Math.sin(entry.flip * Math.PI) * 0.085 + Math.sin(entry.pop * Math.PI) * 0.025;
         }
       }
       return;
@@ -1362,7 +1539,7 @@ export class StudyScene {
     const sipActive = this.avatarAct.isSipping();
     const hovered = this.player.hovered;
     for (const it of this.items.values()) {
-      if (it.id === "mug" && sipActive) {
+      if ((it.id === "mug" && sipActive) || (it.id === "gameTable" && this.memoryBoard.visible)) {
         it.hover = approach(it.hover, 0, 14, dt);
         it.bounce = 0;
       } else {

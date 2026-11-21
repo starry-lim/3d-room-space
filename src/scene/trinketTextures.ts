@@ -246,6 +246,9 @@ export function buildAcrylicStandee(id: string, scale = 1): THREE.Group {
     new THREE.PlaneGeometry(0.18, 0.18),
     new THREE.MeshLambertMaterial({
       map: tex,
+      emissive: 0xffffff,
+      emissiveMap: tex,
+      emissiveIntensity: 0.52,
       transparent: true,
       alphaTest: 0.1,
       side: THREE.DoubleSide,

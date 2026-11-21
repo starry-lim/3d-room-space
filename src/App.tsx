@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StudyScene, type ActivityMode, type RegionId, type SceneEvent } from "./scene/StudyScene";
+import { StudyScene, type ActivityMode, type MemoryCardView, type RegionId, type SceneEvent } from "./scene/StudyScene";
 import { sound } from "./game/audio";
 import { CONSTELLATIONS, TRINKETS, rollTrinket, type ConstellationDef, type TrinketDef } from "./game/rooftopData";
 import {
@@ -84,6 +84,7 @@ export default function App() {
   const [stargazeIdx, setStargazeIdx] = useState(0);
   const [stargazeStep, setStargazeStep] = useState(0);
   const [stargazeDone, setStargazeDone] = useState(false);
+  const [stargazeAimed, setStargazeAimed] = useState(false);
   const [resting, setResting] = useState(false);
   const [activity, setActivity] = useState<ActivityMode>("none");
   const [poufReading, setPoufReading] = useState(false);
@@ -129,6 +130,7 @@ export default function App() {
   const stargazeDoneRef = useRef(stargazeDone);
   stargazeDoneRef.current = stargazeDone;
   const stargazeAimPendingRef = useRef(false);
+  const memoryFlipRef = useRef<((idx: number) => void) | null>(null);
   const toastId = useRef(0);
   const page = useRef(0);
   const lastSip = useRef(0);
@@ -791,6 +793,10 @@ export default function App() {
     stargazeAimPendingRef.current = true;
   }, []);
 
+  const syncMemoryCards = useCallback((cards: MemoryCardView[] | null) => {
+    sceneRef.current?.syncMemoryCards(cards);
+  }, []);
+
   const stargazeHitRef = useRef<() => void>(() => {});
   stargazeHitRef.current = () => {
     if (stargazeDoneRef.current) return;
@@ -848,6 +854,8 @@ export default function App() {
           },
           onReady: () => setReady(true),
           onStargazeHit: () => stargazeHitRef.current(),
+          onStargazeAim: (aligned) => setStargazeAimed(aligned),
+          onMemoryCardClick: (idx) => memoryFlipRef.current?.(idx),
         },
         touch,
       );
@@ -908,6 +916,7 @@ export default function App() {
       sceneRef.current?.setStargazeTarget(def.id, stargazeStep, aim);
     } else {
       sceneRef.current?.setStargazeTarget(null, 0, false);
+      setStargazeAimed(false);
     }
   }, [ready, panel, stargazeIdx, stargazeStep]);
 
@@ -1223,6 +1232,7 @@ export default function App() {
                 selectedIdx={stargazeIdx}
                 step={stargazeStep}
                 finished={stargazeDone}
+                aimed={stargazeAimed}
                 onSelect={selectConstellation}
                 onClose={() => setPanel(null)}
               />
@@ -1233,7 +1243,8 @@ export default function App() {
               <MemoryMatchPanel
                 bestMoves={save.rooftop.memoryBestMoves}
                 tokens={save.rooftop.tokens}
-                onCardEvent={(matched) => sceneRef.current?.pulseTableCards(matched)}
+                flipCardRef={memoryFlipRef}
+                onSyncCards={syncMemoryCards}
                 onWin={winMemoryMatch}
                 onClose={() => setPanel(null)}
               />
